@@ -353,11 +353,9 @@ fn resolve_plugin_executable(plugin_dir: &Path, executable: &str) -> PathBuf {
 
     #[cfg(windows)]
     {
-        if !resolved.exists() {
-            let bat = resolved.with_extension("bat");
-            if bat.exists() {
-                return bat;
-            }
+        let bat = resolved.with_extension("bat");
+        if bat.exists() {
+            return bat;
         }
     }
 

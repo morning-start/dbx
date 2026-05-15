@@ -316,10 +316,26 @@ pub async fn list_objects_core(
             .await
             .map_err(|e| e.to_string())?;
         }
+        if let Some(PoolKind::ExternalDriver { config, session, .. }) = connections.get(&pool_key) {
+            let config = config.clone();
+            let session = session.clone();
+            drop(connections);
+            return session
+                .invoke::<Vec<db::ObjectInfo>>(
+                    "listObjects",
+                    serde_json::json!({ "connection": config, "database": database, "schema": schema }),
+                )
+                .await;
+        }
         if let Some(client) = extract_sqlserver(&connections, &pool_key) {
             drop(connections);
             let mut client = client.lock().await;
             return db::sqlserver::list_objects(&mut client, schema).await;
+        }
+        if let Some(client) = extract_agent(&connections, &pool_key) {
+            drop(connections);
+            let mut client = client.lock().await;
+            return client.call("list_objects", serde_json::json!({"schema": schema})).await;
         }
     }
 
