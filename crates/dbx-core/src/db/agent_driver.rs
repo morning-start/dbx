@@ -297,6 +297,29 @@ impl AgentDriverClient {
         self.call_method(AgentMethod::Disconnect, serde_json::json!({})).await
     }
 
+    pub async fn list_databases<T: DeserializeOwned + Send + 'static>(&mut self) -> Result<T, String> {
+        self.call_method(AgentMethod::ListDatabases, serde_json::json!({})).await
+    }
+
+    pub async fn list_schemas<T: DeserializeOwned + Send + 'static>(&mut self, database: &str) -> Result<T, String> {
+        self.call_method(AgentMethod::ListSchemas, serde_json::json!({ "database": database })).await
+    }
+
+    pub async fn execute_query<T: DeserializeOwned + Send + 'static>(&mut self, params: Value) -> Result<T, String> {
+        self.call_method(AgentMethod::ExecuteQuery, params).await
+    }
+
+    pub async fn execute_query_page<T: DeserializeOwned + Send + 'static>(
+        &mut self,
+        params: Value,
+    ) -> Result<T, String> {
+        self.call_method(AgentMethod::ExecuteQueryPage, params).await
+    }
+
+    pub async fn fetch_query_page<T: DeserializeOwned + Send + 'static>(&mut self, params: Value) -> Result<T, String> {
+        self.call_method(AgentMethod::FetchQueryPage, params).await
+    }
+
     pub async fn try_optional_handshake(&mut self, app_version: &str) -> Option<AgentHandshake> {
         match self.call_method::<AgentHandshake>(AgentMethod::Handshake, agent_handshake_params(app_version)).await {
             Ok(handshake) => {
@@ -470,8 +493,8 @@ impl Drop for AgentDriverClient {
 mod tests {
     use super::{
         agent_handshake_params, agent_java_args, agent_proxy_env_vars, format_agent_process_error,
-        is_unsupported_handshake_error, read_agent_line, AgentCapability, AgentHandshake, AgentMethod, StderrTail,
-        AGENT_PROTOCOL_VERSION,
+        is_unsupported_handshake_error, read_agent_line, AgentCapability, AgentDriverClient, AgentHandshake,
+        AgentMethod, StderrTail, AGENT_PROTOCOL_VERSION,
     };
     use std::io::Cursor;
 
@@ -590,6 +613,15 @@ mod tests {
         assert_eq!(AgentMethod::FetchQueryPage.as_str(), "fetch_query_page");
         assert_eq!(AgentMethod::Disconnect.as_str(), "disconnect");
         assert_eq!(AgentMethod::Shutdown.as_str(), "shutdown");
+    }
+
+    #[test]
+    fn exposes_schema_and_query_protocol_wrappers() {
+        let _list_databases = AgentDriverClient::list_databases::<serde_json::Value>;
+        let _list_schemas = AgentDriverClient::list_schemas::<serde_json::Value>;
+        let _execute_query = AgentDriverClient::execute_query::<serde_json::Value>;
+        let _execute_query_page = AgentDriverClient::execute_query_page::<serde_json::Value>;
+        let _fetch_query_page = AgentDriverClient::fetch_query_page::<serde_json::Value>;
     }
 
     #[test]

@@ -417,13 +417,13 @@ pub async fn do_execute(
                 let mut client = client.lock().await;
                 if let Some(session_id) = options.result_session_id.as_deref() {
                     let params = agent_fetch_query_page_params(session_id, options.page_size.unwrap_or(MAX_ROWS));
-                    client.call("fetch_query_page", params).await
+                    client.fetch_query_page(params).await
                 } else if options.page_size.is_some() {
                     let params = agent_execute_query_page_params(&sql, schema.as_deref(), options);
-                    client.call("execute_query_page", params).await
+                    client.execute_query_page(params).await
                 } else {
                     let params = agent_execute_query_params(&sql, schema.as_deref(), options);
-                    client.call("execute_query", params).await
+                    client.execute_query(params).await
                 }
             })
             .await

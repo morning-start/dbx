@@ -262,7 +262,7 @@ pub async fn list_databases_core(state: &AppState, connection_id: &str) -> Resul
             }
             drop(connections);
             let mut client = client.lock().await;
-            return client.call("list_databases", serde_json::json!({})).await;
+            return client.list_databases().await;
         }
     }
 
@@ -309,7 +309,7 @@ pub async fn list_schemas_core(state: &AppState, connection_id: &str, database: 
         if let Some(client) = extract_agent(&connections, &pool_key) {
             drop(connections);
             let mut client = client.lock().await;
-            return client.call("list_schemas", serde_json::json!({"database": database})).await;
+            return client.list_schemas(database).await;
         }
     }
 
