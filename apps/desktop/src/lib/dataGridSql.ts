@@ -18,10 +18,13 @@ export interface DataGridTableMeta {
 
 export interface DataGridColumnInfo {
   name: string;
+  data_type: string;
   is_nullable: boolean;
   column_default?: string | null;
   extra?: string | null;
 }
+
+export type GridSqlLiteralColumnInfo = Pick<DataGridColumnInfo, "data_type">;
 
 export interface DataGridSaveStatementOptions {
   databaseType?: DatabaseType;
@@ -124,6 +127,7 @@ export function buildDataGridSaveStatements(options: DataGridSaveStatementOption
   if (options.databaseType === "neo4j") return buildNeo4jDataGridSaveStatements(options);
   if (options.databaseType === "tdengine") return buildTdengineDataGridSaveStatements(options);
   const saveColumns = effectiveColumns(options.sourceColumns, options.columns);
+  const columnInfo = columnInfoByName(options.tableMeta.columns);
 
   const table = qualifiedTableName({
     databaseType: options.databaseType,
@@ -140,18 +144,34 @@ export function buildDataGridSaveStatements(options: DataGridSaveStatementOption
       .filter(([columnIndex]) => !isOracleRowId(options.databaseType, saveColumns[columnIndex]))
       .map(
         ([columnIndex, value]) =>
-          `${quoteIdent(options.databaseType, saveColumns[columnIndex]!)} = ${formatGridSqlLiteral(value, options.databaseType)}`,
+          `${quoteIdent(options.databaseType, saveColumns[columnIndex]!)} = ${formatGridSqlLiteral(
+            value,
+            options.databaseType,
+            columnInfo.get(normalizeColumnName(saveColumns[columnIndex]!)),
+          )}`,
       )
       .join(", ");
     if (!sets) continue;
-    const where = buildPrimaryKeyWhere(options.databaseType, options.tableMeta.primaryKeys, saveColumns, row);
+    const where = buildPrimaryKeyWhere(
+      options.databaseType,
+      options.tableMeta.primaryKeys,
+      saveColumns,
+      row,
+      columnInfo,
+    );
     statements.push(`UPDATE ${table} SET ${sets} WHERE ${where};`);
   }
 
   for (const rowIndex of options.deletedRows) {
     const row = options.rows[rowIndex];
     if (!row) continue;
-    const where = buildPrimaryKeyWhere(options.databaseType, options.tableMeta.primaryKeys, saveColumns, row);
+    const where = buildPrimaryKeyWhere(
+      options.databaseType,
+      options.tableMeta.primaryKeys,
+      saveColumns,
+      row,
+      columnInfo,
+    );
     statements.push(`DELETE FROM ${table} WHERE ${where};`);
   }
 
@@ -163,7 +183,11 @@ export function buildDataGridSaveStatements(options: DataGridSaveStatementOption
       .filter((pair) => pair.value !== null && pair.value !== undefined);
     if (!insertPairs.length) continue;
     const columns = insertPairs.map((pair) => quoteIdent(options.databaseType, pair.column)).join(", ");
-    const values = insertPairs.map((pair) => formatGridSqlLiteral(pair.value, options.databaseType)).join(", ");
+    const values = insertPairs
+      .map((pair) =>
+        formatGridSqlLiteral(pair.value, options.databaseType, columnInfo.get(normalizeColumnName(pair.column))),
+      )
+      .join(", ");
     statements.push(`INSERT INTO ${table} (${columns}) VALUES (${values});`);
   }
 
@@ -176,6 +200,7 @@ export function buildDataGridCopyUpdateStatements(options: DataGridCopyUpdateSta
   if (primaryKeys.length === 0) return [];
 
   const saveColumns = effectiveColumns(options.sourceColumns, options.columns);
+  const columnInfo = columnInfoByName(options.tableMeta.columns);
   const primaryKeyIndexes = primaryKeys.map((primaryKey) => findColumnIndex(saveColumns, primaryKey));
   if (primaryKeyIndexes.some((index) => index === -1)) return [];
 
@@ -200,12 +225,23 @@ export function buildDataGridCopyUpdateStatements(options: DataGridCopyUpdateSta
     const sets = writableIndexes
       .map(
         ({ column, index }) =>
-          `${quoteIdent(options.databaseType, column)} = ${formatGridSqlLiteral(row[index], options.databaseType)}`,
+          `${quoteIdent(options.databaseType, column)} = ${formatGridSqlLiteral(
+            row[index],
+            options.databaseType,
+            columnInfo.get(normalizeColumnName(column)),
+          )}`,
       )
       .join(", ");
     if (!sets) continue;
     const where = primaryKeys
-      .map((primaryKey, index) => buildColumnPredicate(options.databaseType, primaryKey, row[primaryKeyIndexes[index]]))
+      .map((primaryKey, index) =>
+        buildColumnPredicate(
+          options.databaseType,
+          primaryKey,
+          row[primaryKeyIndexes[index]],
+          columnInfo.get(normalizeColumnName(primaryKey)),
+        ),
+      )
       .join(" AND ");
     statements.push(`UPDATE ${table} SET ${sets} WHERE ${where};`);
   }
@@ -291,6 +327,7 @@ function tdengineTagColumns(columns: DataGridColumnInfo[] | undefined): Set<stri
 export function buildDataGridRollbackStatements(options: DataGridSaveStatementOptions): string[] {
   if (options.databaseType === "neo4j") return buildNeo4jDataGridRollbackStatements(options);
   const saveColumns = effectiveColumns(options.sourceColumns, options.columns);
+  const columnInfo = columnInfoByName(options.tableMeta.columns);
 
   const table = qualifiedTableName({
     databaseType: options.databaseType,
@@ -300,7 +337,7 @@ export function buildDataGridRollbackStatements(options: DataGridSaveStatementOp
   const statements: string[] = [];
 
   for (const row of options.newRows) {
-    const where = buildRowWhere(options.databaseType, saveColumns, row);
+    const where = buildRowWhere(options.databaseType, saveColumns, row, columnInfo);
     if (where) statements.push(`DELETE FROM ${table} WHERE ${where};`);
   }
 
@@ -312,7 +349,11 @@ export function buildDataGridRollbackStatements(options: DataGridSaveStatementOp
       .filter((pair): pair is { column: string; value: GridCellValue } => !!pair.column)
       .filter((pair) => !isOracleRowId(options.databaseType, pair.column));
     const columns = insertPairs.map((pair) => quoteIdent(options.databaseType, pair.column)).join(", ");
-    const values = insertPairs.map((pair) => formatGridSqlLiteral(pair.value, options.databaseType)).join(", ");
+    const values = insertPairs
+      .map((pair) =>
+        formatGridSqlLiteral(pair.value, options.databaseType, columnInfo.get(normalizeColumnName(pair.column))),
+      )
+      .join(", ");
     statements.push(`INSERT INTO ${table} (${columns}) VALUES (${values});`);
   }
 
@@ -329,14 +370,23 @@ export function buildDataGridRollbackStatements(options: DataGridSaveStatementOp
     const sets = writableChanges
       .map(
         ([columnIndex]) =>
-          `${quoteIdent(options.databaseType, saveColumns[columnIndex]!)} = ${formatGridSqlLiteral(row[columnIndex], options.databaseType)}`,
+          `${quoteIdent(options.databaseType, saveColumns[columnIndex]!)} = ${formatGridSqlLiteral(
+            row[columnIndex],
+            options.databaseType,
+            columnInfo.get(normalizeColumnName(saveColumns[columnIndex]!)),
+          )}`,
       )
       .join(", ");
     if (!sets) continue;
     const where = [
-      buildPrimaryKeyWhere(options.databaseType, options.tableMeta.primaryKeys, saveColumns, afterRow),
+      buildPrimaryKeyWhere(options.databaseType, options.tableMeta.primaryKeys, saveColumns, afterRow, columnInfo),
       ...writableChanges.map(([columnIndex, value]) =>
-        buildColumnPredicate(options.databaseType, saveColumns[columnIndex]!, value),
+        buildColumnPredicate(
+          options.databaseType,
+          saveColumns[columnIndex]!,
+          value,
+          columnInfo.get(normalizeColumnName(saveColumns[columnIndex]!)),
+        ),
       ),
     ]
       .filter(Boolean)
@@ -363,6 +413,10 @@ function effectiveColumn(
   return effectiveColumns(sourceColumns, columns)[index];
 }
 
+function columnInfoByName(columns: DataGridColumnInfo[] | undefined): Map<string, DataGridColumnInfo> {
+  return new Map((columns ?? []).map((column) => [normalizeColumnName(column.name), column]));
+}
+
 export function dataGridSaveExecutionSchema(
   databaseType: DatabaseType | undefined,
   tableMeta: DataGridTableMeta | undefined,
@@ -380,15 +434,63 @@ export function normalizeDataGridSaveError(databaseType: DatabaseType | undefine
   return message;
 }
 
-export function formatGridSqlLiteral(value: GridCellValue, databaseType?: DatabaseType): string {
+export function formatGridSqlLiteral(
+  value: GridCellValue,
+  databaseType?: DatabaseType,
+  columnInfo?: GridSqlLiteralColumnInfo,
+): string {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   const text = String(value);
   if (text === "") return databaseType === "sqlserver" ? "N''" : "''";
-  const literalText = databaseType === "tdengine" ? formatTdengineTimestampLiteralText(text) : text;
+  const literalText =
+    databaseType === "tdengine"
+      ? formatTdengineTimestampLiteralText(text)
+      : isMysqlDatetimeLiteralDatabase(databaseType) && (!columnInfo || isTemporalColumnType(columnInfo.data_type))
+        ? formatMysqlTemporalLiteralText(text, columnInfo?.data_type)
+        : text;
   const escaped = `'${literalText.replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
   return databaseType === "sqlserver" ? `N${escaped}` : escaped;
+}
+
+function isMysqlDatetimeLiteralDatabase(databaseType: DatabaseType | undefined): boolean {
+  return (
+    databaseType === "mysql" ||
+    databaseType === "doris" ||
+    databaseType === "starrocks" ||
+    databaseType === "goldendb" ||
+    databaseType === "sundb"
+  );
+}
+
+function formatMysqlTemporalLiteralText(text: string, dataType: string | undefined): string {
+  const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/i.exec(text);
+  if (!match) return text;
+  const kind = temporalColumnKind(dataType);
+  if (kind === "date") return match[1];
+  if (kind === "time") return `${match[2]}${normalizeMysqlFractionalSeconds(match[3])}`;
+  return `${match[1]} ${match[2]}${normalizeMysqlFractionalSeconds(match[3])}`;
+}
+
+function normalizeMysqlFractionalSeconds(fraction: string | undefined): string {
+  if (!fraction) return "";
+  return fraction.length > 7 ? fraction.slice(0, 7) : fraction;
+}
+
+function isTemporalColumnType(dataType: string | undefined): boolean {
+  return temporalColumnKind(dataType) !== undefined;
+}
+
+function temporalColumnKind(dataType: string | undefined): "date" | "time" | "datetime" | undefined {
+  const base = (dataType ?? "")
+    .trim()
+    .toLowerCase()
+    .split(/[(:\s]/)[0];
+  if (base === "date") return "date";
+  if (base === "time") return "time";
+  if (base === "datetime" || base === "timestamp") return "datetime";
+  return undefined;
 }
 
 function formatTdengineTimestampLiteralText(text: string): string {
@@ -417,13 +519,18 @@ function buildPrimaryKeyWhere(
   primaryKeys: string[],
   columns: Array<string | undefined>,
   row: GridCellValue[],
+  columnInfo: Map<string, DataGridColumnInfo> = new Map(),
 ): string {
   if (primaryKeys.length === 0 && usesKeylessRowPredicate(databaseType))
-    return buildRowWhere(databaseType, columns, row);
+    return buildRowWhere(databaseType, columns, row, columnInfo);
   return primaryKeys
     .map((primaryKey) => {
       const value = row[columns.indexOf(primaryKey)];
-      return `${predicateIdent(databaseType, primaryKey)} = ${formatGridSqlLiteral(value, databaseType)}`;
+      return `${predicateIdent(databaseType, primaryKey)} = ${formatGridSqlLiteral(
+        value,
+        databaseType,
+        columnInfo.get(normalizeColumnName(primaryKey)),
+      )}`;
     })
     .join(" AND ");
 }
@@ -432,19 +539,27 @@ function buildRowWhere(
   databaseType: DatabaseType | undefined,
   columns: Array<string | undefined>,
   row: GridCellValue[],
+  columnInfo: Map<string, DataGridColumnInfo> = new Map(),
 ): string {
   return columns
     .map((column, index) =>
-      !column || isOracleRowId(databaseType, column) ? "" : buildColumnPredicate(databaseType, column, row[index]),
+      !column || isOracleRowId(databaseType, column)
+        ? ""
+        : buildColumnPredicate(databaseType, column, row[index], columnInfo.get(normalizeColumnName(column))),
     )
     .filter(Boolean)
     .join(" AND ");
 }
 
-function buildColumnPredicate(databaseType: DatabaseType | undefined, column: string, value: GridCellValue): string {
+function buildColumnPredicate(
+  databaseType: DatabaseType | undefined,
+  column: string,
+  value: GridCellValue,
+  columnInfo?: DataGridColumnInfo,
+): string {
   const ident = predicateIdent(databaseType, column);
   if (value === null || value === undefined) return `${ident} IS NULL`;
-  return `${ident} = ${formatGridSqlLiteral(value, databaseType)}`;
+  return `${ident} = ${formatGridSqlLiteral(value, databaseType, columnInfo)}`;
 }
 
 function isOracleRowId(databaseType: DatabaseType | undefined, name: string | undefined): boolean {

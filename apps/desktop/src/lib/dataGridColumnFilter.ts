@@ -13,7 +13,7 @@ export function buildColumnValueFilterCondition(options: {
 
   const column = columnFilterRef(options.databaseType, options.columnName);
   if (/^null$/i.test(text)) return `${column} IS NULL`;
-  return `${column} = ${formatGridSqlLiteral(parseTypedFilterValue(text, options.columnInfo), options.databaseType)}`;
+  return `${column} = ${formatGridSqlLiteral(parseTypedFilterValue(text, options.columnInfo), options.databaseType, options.columnInfo)}`;
 }
 
 export function appendColumnValueFilterCondition(

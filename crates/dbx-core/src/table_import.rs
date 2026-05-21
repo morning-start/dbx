@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::connection::AppState;
 use crate::models::connection::DatabaseType;
-use crate::transfer::{execute_on_pool, generate_insert, qualified_table};
+use crate::transfer::{execute_on_pool, generate_insert_typed, get_columns_for_transfer, qualified_table};
 
 pub const DEFAULT_PREVIEW_LIMIT: usize = 50;
 pub const DEFAULT_BATCH_SIZE: usize = 500;
@@ -347,6 +347,7 @@ pub fn mapping_indexes(
 pub fn build_import_insert_batches(
     data: &ParsedImportFile,
     mappings: &[TableImportColumnMapping],
+    target_column_types: &[(String, String)],
     table: &str,
     schema: &str,
     db_type: &DatabaseType,
@@ -354,6 +355,15 @@ pub fn build_import_insert_batches(
 ) -> Result<Vec<ImportSqlBatch>, String> {
     let mapped = mapping_indexes(data, mappings)?;
     let columns = mapped.iter().map(|(_, target)| target.clone()).collect::<Vec<_>>();
+    let column_types = columns
+        .iter()
+        .map(|column| {
+            target_column_types
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(column))
+                .map(|(_, data_type)| data_type.clone())
+        })
+        .collect::<Vec<_>>();
     let batch_size = batch_size.max(1);
     let mut batches = Vec::new();
 
@@ -367,7 +377,7 @@ pub fn build_import_insert_batches(
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        let sql = generate_insert(&columns, &rows, table, schema, db_type);
+        let sql = generate_insert_typed(&columns, &column_types, &rows, table, schema, db_type);
         if !sql.trim().is_empty() {
             batches.push(ImportSqlBatch { sql, row_count: chunk.len() });
         }
@@ -439,9 +449,24 @@ where
         error: None,
     });
 
+    let target_column_types = get_columns_for_transfer(
+        state,
+        pool_key,
+        &request.connection_id,
+        &request.database,
+        &request.schema,
+        &request.table,
+    )
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|column| (column.name, column.data_type))
+    .collect::<Vec<_>>();
+
     let batches = match build_import_insert_batches(
         &parsed,
         &request.mappings,
+        &target_column_types,
         &request.table,
         &request.schema,
         db_type,
@@ -586,7 +611,7 @@ mod tests {
         };
 
         let batches =
-            build_import_insert_batches(&data, &mappings, "users", "public", &DatabaseType::Postgres, 2).unwrap();
+            build_import_insert_batches(&data, &mappings, &[], "users", "public", &DatabaseType::Postgres, 2).unwrap();
 
         assert_eq!(batches, vec![
             ImportSqlBatch {
@@ -598,5 +623,43 @@ mod tests {
                 row_count: 1,
             },
         ]);
+    }
+
+    #[test]
+    fn import_insert_batches_use_target_column_types_for_mysql_temporal_values() {
+        let mappings = vec![
+            TableImportColumnMapping {
+                source_column: "start".to_string(),
+                target_column: "insurance_start_time".to_string(),
+            },
+            TableImportColumnMapping { source_column: "raw".to_string(), target_column: "raw_text".to_string() },
+        ];
+        let data = ParsedImportFile {
+            columns: vec!["start".to_string(), "raw".to_string()],
+            rows: vec![vec![
+                serde_json::json!("2026-05-12T00:00:00+00:00"),
+                serde_json::json!("2026-05-12T00:00:00+00:00"),
+            ]],
+            total_rows: 1,
+        };
+
+        let batches = build_import_insert_batches(
+            &data,
+            &mappings,
+            &[
+                ("insurance_start_time".to_string(), "datetime".to_string()),
+                ("raw_text".to_string(), "varchar(64)".to_string()),
+            ],
+            "policies",
+            "",
+            &DatabaseType::Mysql,
+            500,
+        )
+        .unwrap();
+
+        assert_eq!(batches, vec![ImportSqlBatch {
+            sql: "INSERT INTO `policies` (`insurance_start_time`, `raw_text`) VALUES\n('2026-05-12 00:00:00', '2026-05-12T00:00:00+00:00')".to_string(),
+            row_count: 1,
+        }]);
     }
 }

@@ -71,7 +71,7 @@ fn mysql_temporal_to_json_value(row: &MySqlRow, idx: usize) -> Option<serde_json
         return Some(serde_json::Value::String(v.to_string()));
     }
     if let Ok(v) = row.try_get::<DateTime<Utc>, _>(idx) {
-        return Some(serde_json::Value::String(v.to_rfc3339()));
+        return Some(serde_json::Value::String(mysql_datetime_to_string(v)));
     }
     if let Ok(v) = row.try_get::<NaiveDate, _>(idx) {
         return Some(serde_json::Value::String(v.to_string()));
@@ -80,6 +80,10 @@ fn mysql_temporal_to_json_value(row: &MySqlRow, idx: usize) -> Option<serde_json
         return Some(serde_json::Value::String(v.to_string()));
     }
     None
+}
+
+fn mysql_datetime_to_string(value: DateTime<Utc>) -> String {
+    value.naive_utc().to_string()
 }
 
 fn mysql_value_to_json(row: &MySqlRow, idx: usize, type_name: &str) -> serde_json::Value {
@@ -658,5 +662,12 @@ mod tests {
         assert!(mysql_url_has_timezone_param("mysql://root@localhost/app?timezone=%2B08:00"));
         assert!(mysql_url_has_timezone_param("mysql://root@localhost/app?charset=utf8mb4&time-zone=%2B08:00"));
         assert!(!mysql_url_has_timezone_param("mysql://root@localhost/app?charset=utf8mb4"));
+    }
+
+    #[test]
+    fn mysql_datetime_utc_values_display_without_rfc3339_offset() {
+        let value = DateTime::from_timestamp(1_778_544_000, 0).expect("valid timestamp");
+
+        assert_eq!(mysql_datetime_to_string(value), "2026-05-12 00:00:00");
     }
 }

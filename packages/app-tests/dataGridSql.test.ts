@@ -357,6 +357,77 @@ test("formats TDengine timestamp literals with the local timezone offset", () =>
   );
 });
 
+test("formats MySQL RFC3339 datetime strings as DATETIME-compatible literals", () => {
+  assert.equal(formatGridSqlLiteral("2026-05-12T00:00:00+00:00", "mysql"), "'2026-05-12 00:00:00'");
+  assert.equal(formatGridSqlLiteral("2026-05-12T00:00:00.123456Z", "mysql"), "'2026-05-12 00:00:00.123456'");
+});
+
+test("formats MySQL grid saves using target column temporal types", () => {
+  const statements = buildDataGridSaveStatements({
+    databaseType: "mysql",
+    tableMeta: {
+      tableName: "policies",
+      primaryKeys: ["id"],
+      columns: [
+        { name: "id", data_type: "int", is_nullable: false, is_primary_key: true },
+        { name: "insurance_start_time", data_type: "datetime", is_nullable: true, is_primary_key: false },
+        { name: "raw_text", data_type: "varchar(64)", is_nullable: true, is_primary_key: false },
+        { name: "coverage_day", data_type: "date", is_nullable: true, is_primary_key: false },
+        { name: "start_clock", data_type: "time", is_nullable: true, is_primary_key: false },
+      ],
+    },
+    columns: ["id", "insurance_start_time", "raw_text", "coverage_day", "start_clock"],
+    rows: [[1, "2026-05-12T00:00:00+00:00", "old", "2026-05-12T00:00:00+00:00", "2026-05-12T09:30:45+00:00"]],
+    dirtyRows: [
+      [
+        0,
+        [
+          [1, "2026-05-12T00:00:00+00:00"],
+          [2, "2026-05-12T00:00:00+00:00"],
+          [3, "2026-05-12T00:00:00+00:00"],
+          [4, "2026-05-12T09:30:45+00:00"],
+        ],
+      ],
+    ],
+    deletedRows: [],
+    newRows: [
+      [
+        2,
+        "2026-05-12T00:00:00+00:00",
+        "2026-05-12T00:00:00+00:00",
+        "2026-05-12T00:00:00+00:00",
+        "2026-05-12T09:30:45+00:00",
+      ],
+    ],
+  });
+
+  assert.deepEqual(statements, [
+    "UPDATE `policies` SET `insurance_start_time` = '2026-05-12 00:00:00', `raw_text` = '2026-05-12T00:00:00+00:00', `coverage_day` = '2026-05-12', `start_clock` = '09:30:45' WHERE `id` = 1;",
+    "INSERT INTO `policies` (`id`, `insurance_start_time`, `raw_text`, `coverage_day`, `start_clock`) VALUES (2, '2026-05-12 00:00:00', '2026-05-12T00:00:00+00:00', '2026-05-12', '09:30:45');",
+  ]);
+});
+
+test("formats MySQL copy-as-update statements using target column temporal types", () => {
+  const statements = buildDataGridCopyUpdateStatements({
+    databaseType: "mysql",
+    tableMeta: {
+      tableName: "policies",
+      primaryKeys: ["id"],
+      columns: [
+        { name: "id", data_type: "int", is_nullable: false, is_primary_key: true },
+        { name: "insurance_start_time", data_type: "timestamp", is_nullable: true, is_primary_key: false },
+        { name: "raw_text", data_type: "varchar(64)", is_nullable: true, is_primary_key: false },
+      ],
+    },
+    columns: ["id", "insurance_start_time", "raw_text"],
+    rows: [[1, "2026-05-12T00:00:00+00:00", "2026-05-12T00:00:00+00:00"]],
+  });
+
+  assert.deepEqual(statements, [
+    "UPDATE `policies` SET `insurance_start_time` = '2026-05-12 00:00:00', `raw_text` = '2026-05-12T00:00:00+00:00' WHERE `id` = 1;",
+  ]);
+});
+
 function tdengineTimestampLiteral(text: string): string {
   const [datePart, timePart] = text.split(" ");
   const [time, rawFraction = ""] = timePart.split(".");

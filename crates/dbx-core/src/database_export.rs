@@ -187,7 +187,7 @@ pub async fn export_database_sql_core(
         // Export data
         if request.include_data {
             // Get columns
-            let col_names: Vec<String> = match crate::schema::get_columns_core(
+            let columns = match crate::schema::get_columns_core(
                 state,
                 &request.connection_id,
                 &request.database,
@@ -196,7 +196,7 @@ pub async fn export_database_sql_core(
             )
             .await
             {
-                Ok(cols) => cols.iter().map(|c| c.name.clone()).collect(),
+                Ok(cols) => cols,
                 Err(e) => {
                     writeln!(file, "-- ERROR exporting table {table_name}: {e}")
                         .map_err(|e| format!("Failed to write file: {e}"))?;
@@ -204,6 +204,8 @@ pub async fn export_database_sql_core(
                     continue;
                 }
             };
+            let col_names = columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+            let col_types = columns.iter().map(|c| Some(c.data_type.clone())).collect::<Vec<_>>();
 
             if !col_names.is_empty() {
                 // Get row count
@@ -260,8 +262,9 @@ pub async fn export_database_sql_core(
                         break;
                     }
 
-                    let insert_sql = crate::transfer::generate_insert(
+                    let insert_sql = crate::transfer::generate_insert_typed(
                         &col_names,
+                        &col_types,
                         &result.rows,
                         table_name,
                         &request.schema,
