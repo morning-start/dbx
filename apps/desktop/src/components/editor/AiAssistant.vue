@@ -556,6 +556,7 @@ function applySql(code: string) {
 }
 
 function executeSql(code: string) {
+  emit("replaceSql", code);
   emit("executeSql", code);
 }
 

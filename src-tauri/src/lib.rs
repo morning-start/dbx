@@ -370,6 +370,7 @@ pub fn run() {
             commands::mongo_cmd::mongo_list_databases,
             commands::mongo_cmd::mongo_list_collections,
             commands::mongo_cmd::mongo_find_documents,
+            commands::mongo_cmd::mongo_aggregate_documents,
             commands::mongo_cmd::mongo_insert_document,
             commands::mongo_cmd::mongo_update_document,
             commands::mongo_cmd::mongo_delete_document,

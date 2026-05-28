@@ -1267,6 +1267,15 @@ export async function mongoFindDocuments(
   return post("/api/mongo/find-documents", { connectionId, database, collection, skip, limit, filter, sort });
 }
 
+export async function mongoAggregateDocuments(
+  connectionId: string,
+  database: string,
+  collection: string,
+  pipelineJson: string,
+): Promise<MongoDocumentResult> {
+  return post("/api/mongo/aggregate-documents", { connectionId, database, collection, pipelineJson });
+}
+
 export async function mongoInsertDocument(
   connectionId: string,
   database: string,

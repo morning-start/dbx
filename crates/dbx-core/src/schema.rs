@@ -386,8 +386,27 @@ pub async fn list_tables_core(
         PoolKind::Sqlite(p) => {
             db::sqlite::list_tables(p, schema).await.map(|tables| filter_table_infos(tables, filter, limit))
         }
+        PoolKind::MongoDb(client) => db::mongo_driver::list_collections(client, database)
+            .await
+            .map(|names| collection_names_to_tables(names, "COLLECTION"))
+            .map(|tables| filter_table_infos(tables, filter, limit)),
+        PoolKind::Elasticsearch(client) => db::elasticsearch_driver::list_indices(client)
+            .await
+            .map(|names| collection_names_to_tables(names, "INDEX"))
+            .map(|tables| filter_table_infos(tables, filter, limit)),
         _ => Ok(vec![]),
     }
+}
+
+fn collection_names_to_tables(names: Vec<String>, table_type: &str) -> Vec<db::TableInfo> {
+    names
+        .into_iter()
+        .map(|name| db::TableInfo {
+            name,
+            table_type: table_type.to_string(),
+            comment: None,
+        })
+        .collect()
 }
 
 fn filter_table_infos(tables: Vec<db::TableInfo>, filter: Option<&str>, limit: Option<usize>) -> Vec<db::TableInfo> {

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   mongoCountToQueryResult,
   mongoDocumentsToQueryResult,
+  parseMongoAggregateCommand,
   parseMongoCountDocumentsCommand,
   parseMongoFindCommand,
 } from "../../apps/desktop/src/lib/mongoShellCommand.ts";
@@ -41,6 +42,38 @@ test("parseMongoCountDocumentsCommand parses db collection countDocuments", () =
     collection: "products",
     filter: "{}",
   });
+});
+
+test("parseMongoAggregateCommand parses db collection aggregate", () => {
+  assert.deepEqual(parseMongoAggregateCommand('db.products.aggregate([{"$match":{"active":true}},{"$count":"total"}])'), {
+    collection: "products",
+    pipeline: '[{"$match":{"active":true}},{"$count":"total"}]',
+  });
+});
+
+test("parseMongoAggregateCommand accepts an empty pipeline", () => {
+  assert.deepEqual(parseMongoAggregateCommand("db.products.aggregate([])"), {
+    collection: "products",
+    pipeline: "[]",
+  });
+});
+
+test("parseMongoAggregateCommand rejects non-array pipelines and extra arguments", () => {
+  assert.equal(parseMongoAggregateCommand('db.products.aggregate({"$match":{}})'), null);
+  assert.equal(parseMongoAggregateCommand("db.products.aggregate([], {})"), null);
+  assert.equal(parseMongoAggregateCommand("db.products.aggregate([]).limit(10)"), null);
+});
+
+test("parseMongoAggregateCommand normalises ObjectId arguments with either quote style", () => {
+  const oid = "507f1f77bcf86cd799439011";
+  for (const quote of ["\"", "'"]) {
+    const command = parseMongoAggregateCommand(
+      `db.orders.aggregate([{"$match":{"_id":ObjectId(${quote}${oid}${quote})}}])`,
+    );
+    assert.ok(command, `quote=${quote} should parse`);
+    assert.equal(command.collection, "orders");
+    assert.deepEqual(JSON.parse(command.pipeline), [{ "$match": { "_id": { "$oid": oid } } }]);
+  }
 });
 
 test("mongoCountToQueryResult returns a single count row", () => {

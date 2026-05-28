@@ -1098,6 +1098,15 @@ export async function mongoFindDocuments(
   return invoke("mongo_find_documents", { connectionId, database, collection, skip, limit, filter, sort });
 }
 
+export async function mongoAggregateDocuments(
+  connectionId: string,
+  database: string,
+  collection: string,
+  pipelineJson: string,
+): Promise<MongoDocumentResult> {
+  return invoke("mongo_aggregate_documents", { connectionId, database, collection, pipelineJson });
+}
+
 export async function mongoInsertDocument(
   connectionId: string,
   database: string,

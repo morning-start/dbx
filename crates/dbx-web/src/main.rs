@@ -220,9 +220,13 @@ async fn main() {
         .route("/mongo/list-databases", post(routes::mongo::list_databases))
         .route("/mongo/list-collections", post(routes::mongo::list_collections))
         .route("/mongo/find-documents", post(routes::mongo::find_documents))
+        .route("/mongo/aggregate-documents", post(routes::mongo::aggregate_documents))
         .route("/mongo/insert-document", post(routes::mongo::insert_document))
+        .route("/mongo/insert-documents", post(routes::mongo::insert_documents))
         .route("/mongo/update-document", post(routes::mongo::update_document))
+        .route("/mongo/update-documents", post(routes::mongo::update_documents))
         .route("/mongo/delete-document", post(routes::mongo::delete_document))
+        .route("/mongo/delete-documents", post(routes::mongo::delete_documents))
         // History
         .route("/history", get(routes::history::load_history).delete(routes::history::clear_history))
         .route("/history/save", post(routes::history::save_history))

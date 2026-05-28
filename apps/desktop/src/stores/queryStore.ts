@@ -12,6 +12,7 @@ import { restoreOpenTabsState, serializeOpenTabs } from "@/lib/openTabsPersisten
 import {
   mongoCountToQueryResult,
   mongoDocumentsToQueryResult,
+  parseMongoAggregateCommand,
   parseMongoCountDocumentsCommand,
   parseMongoFindCommand,
 } from "@/lib/mongoShellCommand";
@@ -589,6 +590,7 @@ export const useQueryStore = defineStore("query", () => {
       }
       const mongoFind = conn?.db_type === "mongodb" ? parseMongoFindCommand(sql) : null;
       if (mongoFind) {
+        await connStore.ensureConnected(tab.connectionId);
         console.info("[DBX][executeTabSql:mongo-find:start]", { traceId, collection: mongoFind.collection });
         const result = await api.mongoFindDocuments(
           tab.connectionId,
@@ -621,6 +623,7 @@ export const useQueryStore = defineStore("query", () => {
       }
       const mongoCount = conn?.db_type === "mongodb" ? parseMongoCountDocumentsCommand(sql) : null;
       if (mongoCount) {
+        await connStore.ensureConnected(tab.connectionId);
         console.info("[DBX][executeTabSql:mongo-count:start]", { traceId, collection: mongoCount.collection });
         const result = await api.mongoFindDocuments(
           tab.connectionId,
@@ -640,6 +643,37 @@ export const useQueryStore = defineStore("query", () => {
           current.results = undefined;
           current.activeResultIndex = undefined;
           current.result = mongoCountToQueryResult(result.total, performance.now() - startedAt);
+          current.queryAnalysis = undefined;
+          current.querySourceColumns = undefined;
+          current.queryEditabilityReason = undefined;
+          current.tableMeta = undefined;
+          current.resultBaseSql = options?.resultBaseSql ?? sql;
+          current.resultSortedSql = options?.resultSortedSql;
+        }
+        return;
+      }
+
+      const mongoAggregate = conn?.db_type === "mongodb" ? parseMongoAggregateCommand(sql) : null;
+      if (mongoAggregate) {
+        await connStore.ensureConnected(tab.connectionId);
+        console.info("[DBX][executeTabSql:mongo-aggregate:start]", { traceId, collection: mongoAggregate.collection });
+        const result = await api.mongoAggregateDocuments(
+          tab.connectionId,
+          tab.database,
+          mongoAggregate.collection,
+          mongoAggregate.pipeline,
+        );
+        console.info("[DBX][executeTabSql:mongo-aggregate:done]", {
+          traceId,
+          rowCount: result.documents.length,
+          total: result.total,
+          elapsed: elapsed(),
+        });
+        const current = tabs.value.find((t) => t.id === id);
+        if (current?.executionId === executionId) {
+          current.results = undefined;
+          current.activeResultIndex = undefined;
+          current.result = mongoDocumentsToQueryResult(result.documents, performance.now() - startedAt, result.total);
           current.queryAnalysis = undefined;
           current.querySourceColumns = undefined;
           current.queryEditabilityReason = undefined;

@@ -622,7 +622,7 @@ function ensureQueryTab(): string {
   const tab = activeTab.value;
   if (tab && tab.mode === "query") return tab.id;
   const connId = connectionStore.activeConnectionId || connectionStore.connections[0]?.id || "";
-  const db = tab?.database || "";
+  const db = tab?.database || connectionStore.getConfig(connId)?.database || "";
   return queryStore.createTab(connId, db, undefined, "query");
 }
 

@@ -208,6 +208,7 @@ export const redisLoadMore = forward("redisLoadMore");
 export const mongoListDatabases = forward("mongoListDatabases");
 export const mongoListCollections = forward("mongoListCollections");
 export const mongoFindDocuments = forward("mongoFindDocuments");
+export const mongoAggregateDocuments = forward("mongoAggregateDocuments");
 export const mongoInsertDocument = forward("mongoInsertDocument");
 export const mongoUpdateDocument = forward("mongoUpdateDocument");
 export const mongoDeleteDocument = forward("mongoDeleteDocument");
