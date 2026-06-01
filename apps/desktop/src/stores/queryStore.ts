@@ -798,7 +798,7 @@ export const useQueryStore = defineStore("query", () => {
       }
 
       console.info("[DBX][executeTabSql:execute-multi:start]", { traceId, elapsed: elapsed() });
-      const clientSessionId = useAgentResultSession ? tab.id : undefined;
+      const clientSessionId = tab.mode === "query" ? tab.id : undefined;
       const executionOptions = {
         ...(typeof pageLimit === "number"
           ? useAgentResultSession
@@ -830,9 +830,11 @@ export const useQueryStore = defineStore("query", () => {
       const current = tabs.value.find((t) => t.id === id);
       if (current?.executionId === executionId) {
         if (results.length > 1) {
+          const activeResultIndex = results.findIndex((result) => result.columns.length > 0);
+          const resultIndex = activeResultIndex >= 0 ? activeResultIndex : 0;
           current.results = results;
-          current.activeResultIndex = 0;
-          current.result = results[0];
+          current.activeResultIndex = resultIndex;
+          current.result = results[resultIndex];
         } else {
           current.results = undefined;
           current.activeResultIndex = undefined;

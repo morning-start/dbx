@@ -489,7 +489,7 @@ test("query execution finishes without waiting for metadata analysis", async () 
   }
 });
 
-test("normal query execution does not create a tab-scoped client session", async () => {
+test("query execution is scoped to the tab client session", async () => {
   const restoreStorage = installMemoryStorage();
   setActivePinia(createPinia());
   const connectionStore = useConnectionStore();
@@ -527,8 +527,57 @@ test("normal query execution does not create a tab-scoped client session", async
   try {
     await store.executeTabSql(tabId, "select 1");
 
-    assert.equal(executeBody.clientSessionId, undefined);
+    assert.equal(executeBody.clientSessionId, tabId);
     assert.equal(executeBody.timeoutSecs, 30);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreStorage();
+  }
+});
+
+test("multi statement execution shows the first result set by default", async () => {
+  const restoreStorage = installMemoryStorage();
+  setActivePinia(createPinia());
+  const connectionStore = useConnectionStore();
+  const store = useQueryStore();
+  const originalFetch = globalThis.fetch;
+
+  connectionStore.addEphemeralConnection(conn("conn-1"));
+  const tabId = store.createTab("conn-1", "db", "Query");
+
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    if (url === "/api/query/prepare-pagination-plan") {
+      return new Response(JSON.stringify({ sqlToExecute: "set @id = 1; select @id", useAgentResultSession: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url === "/api/query/execute-multi") {
+      return new Response(
+        JSON.stringify([
+          { columns: [], rows: [], affected_rows: 0, execution_time_ms: 1 },
+          { columns: ["@id"], rows: [[1]], affected_rows: 0, execution_time_ms: 1 },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (url === "/api/query/analyze-editability") {
+      return new Response(JSON.stringify({ editable: false, reason: "complex-source" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response("unexpected request", { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    await store.executeTabSql(tabId, "set @id = 1; select @id");
+
+    const tab = store.tabs.find((item) => item.id === tabId);
+    assert.equal(tab?.activeResultIndex, 1);
+    assert.deepEqual(tab?.result?.columns, ["@id"]);
+    assert.deepEqual(tab?.result?.rows, [[1]]);
   } finally {
     globalThis.fetch = originalFetch;
     restoreStorage();
