@@ -102,15 +102,19 @@ import {
   buildDropObjectSql,
   buildDropSchemaSql,
   buildDropTableSql,
+  buildDropTableChildObjectSql,
   buildDuplicateTableStructureSql,
   buildEmptyTableSql,
   buildTruncateTableSql,
+  type DropTableChildObjectSqlOptions,
   type DropObjectSqlOptions,
+  type TableChildObjectType,
   type TableAdminSqlOptions,
 } from "@/lib/dbAdminSql";
 import { buildRenameObjectSql, supportsObjectRename, type RenameableObjectType } from "@/lib/objectRenameSql";
 import { buildRoutineRenameObjectSourceStatements, supportsSourceBackedRoutineRename } from "@/lib/objectSourceEditor";
 import { buildViewDdl } from "@/lib/viewDdl";
+import { getTableStructureCapabilities } from "@/lib/tableStructureCapabilities";
 import { hexToRgba } from "@/lib/color";
 import { focusSidebarRenameInput } from "@/lib/sidebarRenameFocus";
 import { hasTreeNodeDatabaseContext } from "@/lib/treeNodeContext";
@@ -450,11 +454,21 @@ function isEditableShortcutTarget(target: EventTarget | null): boolean {
 
 function onKeydown(event: KeyboardEvent) {
   if (!isSelected.value || isEditableShortcutTarget(event.target)) return;
+  if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && isDeleteTreeNodeShortcut(event)) {
+    if (!requestDropSelectedNode()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   const action = sidebarSelectionCopyAction(event);
   if (action !== "copy-name") return;
   event.preventDefault();
   event.stopPropagation();
   copyName();
+}
+
+function isDeleteTreeNodeShortcut(event: KeyboardEvent): boolean {
+  return event.key === "Delete" || event.key === "Backspace";
 }
 
 function onDoubleClick() {
@@ -704,6 +718,7 @@ async function duplicateConnection() {
 
 // --- Table Management Operations ---
 const showDropTableConfirm = ref(false);
+const showDropTableChildObjectConfirm = ref(false);
 const showEmptyTableConfirm = ref(false);
 const showTruncateTableConfirm = ref(false);
 const showRenameObjectDialog = ref(false);
@@ -714,6 +729,7 @@ const dropTablePreviewSql = ref("");
 const emptyTablePreviewSql = ref("");
 const truncateTablePreviewSql = ref("");
 const dropObjectPreviewSql = ref("");
+const dropTableChildObjectPreviewSql = ref("");
 const dropDatabasePreviewSql = ref("");
 const dropSchemaPreviewSql = ref("");
 const showDuplicateDialog = ref(false);
@@ -735,19 +751,112 @@ const showProcedureExecutionConfirm = ref(false);
 
 function dropObjectSqlOptions(): DropObjectSqlOptions | null {
   const node = props.node;
-  if (node.type !== "procedure" && node.type !== "function") return null;
+  if (node.type !== "view" && node.type !== "procedure" && node.type !== "function") return null;
   return {
     databaseType: currentDatabaseType(),
-    objectType: node.type === "procedure" ? "PROCEDURE" : "FUNCTION",
+    objectType: node.type === "view" ? "VIEW" : node.type === "procedure" ? "PROCEDURE" : "FUNCTION",
     schema: node.schema,
     name: node.label,
   };
+}
+
+function tableChildDropObjectType(type: TreeNodeType): TableChildObjectType | null {
+  if (type === "column") return "COLUMN";
+  if (type === "index") return "INDEX";
+  if (type === "fkey") return "FOREIGN_KEY";
+  if (type === "trigger") return "TRIGGER";
+  return null;
+}
+
+function tableChildDropObjectName(node: TreeNode): string {
+  if (node.type === "column")
+    return node.meta && "name" in node.meta ? node.meta.name : node.label.replace(/\s+\(.+\)$/, "");
+  if (node.type === "index")
+    return node.meta && "name" in node.meta ? node.meta.name : node.label.replace(/\s+\(.+\)$/, "");
+  if (node.type === "fkey") return node.meta && "name" in node.meta ? node.meta.name : node.label;
+  if (node.type === "trigger")
+    return node.meta && "name" in node.meta ? node.meta.name : node.label.replace(/\s+\(.+\)$/, "");
+  return node.label;
+}
+
+function dropTableChildObjectSqlOptions(): DropTableChildObjectSqlOptions | null {
+  const node = props.node;
+  const objectType = tableChildDropObjectType(node.type);
+  if (!objectType || !node.tableName) return null;
+  const name = tableChildDropObjectName(node).trim();
+  if (!name) return null;
+  return {
+    databaseType: currentDatabaseType(),
+    objectType,
+    schema: node.schema,
+    tableName: node.tableName,
+    name,
+  };
+}
+
+const canDropTableChildObject = computed(() => {
+  const options = dropTableChildObjectSqlOptions();
+  if (!options) return false;
+  const capabilities = getTableStructureCapabilities(currentDatabaseType());
+  if (options.objectType === "COLUMN") return capabilities.dropColumn;
+  if (options.objectType === "INDEX") return capabilities.dropIndex;
+  return true;
+});
+
+function dropObjectMenuLabel(): string {
+  if (props.node.type === "view") return t("contextMenu.dropView");
+  if (props.node.type === "procedure") return t("contextMenu.dropProcedure");
+  if (props.node.type === "function") return t("contextMenu.dropFunction");
+  return t("contextMenu.dropObject");
+}
+
+function dropObjectConfirmTitle(): string {
+  if (props.node.type === "view") return t("contextMenu.confirmDropViewTitle");
+  if (props.node.type === "procedure") return t("contextMenu.confirmDropProcedureTitle");
+  if (props.node.type === "function") return t("contextMenu.confirmDropFunctionTitle");
+  return t("contextMenu.confirmDropObjectTitle");
+}
+
+function dropObjectConfirmMessage(): string {
+  if (props.node.type === "view") return t("contextMenu.confirmDropViewMessage", { name: props.node.label });
+  if (props.node.type === "procedure") return t("contextMenu.confirmDropProcedureMessage", { name: props.node.label });
+  if (props.node.type === "function") return t("contextMenu.confirmDropFunctionMessage", { name: props.node.label });
+  return t("contextMenu.confirmDropObjectMessage", { name: props.node.label });
+}
+
+function dropTableChildObjectMenuLabel(): string {
+  if (props.node.type === "column") return t("contextMenu.dropColumn");
+  if (props.node.type === "index") return t("contextMenu.dropIndex");
+  if (props.node.type === "fkey") return t("contextMenu.dropForeignKey");
+  if (props.node.type === "trigger") return t("contextMenu.dropTrigger");
+  return t("contextMenu.dropObject");
+}
+
+function dropTableChildObjectConfirmTitle(): string {
+  if (props.node.type === "column") return t("contextMenu.confirmDropColumnTitle");
+  if (props.node.type === "index") return t("contextMenu.confirmDropIndexTitle");
+  if (props.node.type === "fkey") return t("contextMenu.confirmDropForeignKeyTitle");
+  if (props.node.type === "trigger") return t("contextMenu.confirmDropTriggerTitle");
+  return t("contextMenu.confirmDropObjectTitle");
+}
+
+function dropTableChildObjectConfirmMessage(): string {
+  return t("contextMenu.confirmDropTableChildObjectMessage", {
+    name: tableChildDropObjectName(props.node),
+    table: props.node.tableName || "",
+  });
 }
 
 async function refreshDropObjectPreviewSql() {
   const options = dropObjectSqlOptions();
   dropObjectPreviewSql.value = "";
   dropObjectPreviewSql.value = options ? await buildDropObjectSql(options).catch(() => "") : "";
+}
+
+async function refreshDropTableChildObjectPreviewSql() {
+  const options = dropTableChildObjectSqlOptions();
+  dropTableChildObjectPreviewSql.value = "";
+  dropTableChildObjectPreviewSql.value = options ? await buildDropTableChildObjectSql(options).catch(() => "") : "";
 }
 
 function viewObjectSource() {
@@ -826,6 +935,28 @@ async function executeProcedureSql(sql: string) {
 function requestDropObject() {
   void refreshDropObjectPreviewSql();
   showDropObjectConfirm.value = true;
+}
+
+function requestDropTableChildObject() {
+  if (!canDropTableChildObject.value) return;
+  void refreshDropTableChildObjectPreviewSql();
+  showDropTableChildObjectConfirm.value = true;
+}
+
+function requestDropSelectedNode(): boolean {
+  if (props.node.type === "table") {
+    dropTable();
+    return true;
+  }
+  if (props.node.type === "view" || props.node.type === "procedure" || props.node.type === "function") {
+    requestDropObject();
+    return true;
+  }
+  if (canDropTableChildObject.value) {
+    requestDropTableChildObject();
+    return true;
+  }
+  return false;
 }
 
 function nodeRenameObjectType(): RenameableObjectType | null {
@@ -944,9 +1075,34 @@ async function confirmDropObject() {
     await connectionStore.ensureConnected(node.connectionId);
     const sql = dropObjectPreviewSql.value || (await buildDropObjectSql(options));
     await api.executeQuery(node.connectionId, node.database, sql, node.schema);
-    const msgKey = node.type === "procedure" ? "contextMenu.dropProcedureSuccess" : "contextMenu.dropFunctionSuccess";
+    const msgKey =
+      node.type === "view"
+        ? "contextMenu.dropViewSuccess"
+        : node.type === "procedure"
+          ? "contextMenu.dropProcedureSuccess"
+          : "contextMenu.dropFunctionSuccess";
     toast(t(msgKey, { name: node.label }), 3000);
-    await refreshTableList(node);
+    if (node.type === "view") {
+      connectionStore.removeTreeNode(node.id);
+    } else {
+      await refreshTableList(node);
+    }
+  } catch (e: any) {
+    toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
+  }
+}
+
+async function confirmDropTableChildObject() {
+  const node = props.node;
+  if (!node.connectionId || !node.database) return;
+  const options = dropTableChildObjectSqlOptions();
+  if (!options) return;
+  try {
+    await connectionStore.ensureConnected(node.connectionId);
+    const sql = dropTableChildObjectPreviewSql.value || (await buildDropTableChildObjectSql(options));
+    await api.executeQuery(node.connectionId, node.database, sql, node.schema);
+    toast(t("contextMenu.dropTableChildObjectSuccess", { name: options.name }), 3000);
+    connectionStore.removeTreeNode(node.id);
   } catch (e: any) {
     toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
   }
@@ -2190,6 +2346,14 @@ function treeItemMenuItems(): ContextMenuItem[] {
     if (canRenameObject.value) {
       items.push({ label: t("contextMenu.renameObject"), action: openRenameObjectDialog, icon: Pencil });
     }
+    if (node.type === "view") {
+      items.push({
+        label: t("contextMenu.dropView"),
+        action: requestDropObject,
+        icon: Trash2,
+        variant: "destructive" as const,
+      });
+    }
     items.push({ label: t("contextMenu.newQuery"), action: newQuery, icon: TerminalSquare });
     if (canOpenDiagram.value) {
       items.push({ label: t("diagram.open"), action: openDiagram, icon: Network });
@@ -2236,8 +2400,33 @@ function treeItemMenuItems(): ContextMenuItem[] {
 
   // 7. Column
   if (node.type === "column") {
+    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy });
     if (canOpenFieldLineage.value) {
+      items.push({ label: "", separator: true });
       items.push({ label: t("lineage.open"), action: openFieldLineage, icon: Network });
+    }
+    if (canDropTableChildObject.value) {
+      items.push({ label: "", separator: true });
+      items.push({
+        label: dropTableChildObjectMenuLabel(),
+        action: requestDropTableChildObject,
+        icon: Trash2,
+        variant: "destructive" as const,
+      });
+    }
+    return items;
+  }
+
+  if (node.type === "index" || node.type === "fkey" || node.type === "trigger") {
+    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy });
+    if (canDropTableChildObject.value) {
+      items.push({ label: "", separator: true });
+      items.push({
+        label: dropTableChildObjectMenuLabel(),
+        action: requestDropTableChildObject,
+        icon: Trash2,
+        variant: "destructive" as const,
+      });
     }
     return items;
   }
@@ -2611,17 +2800,20 @@ function treeItemMenuItems(): ContextMenuItem[] {
 
   <DangerConfirmDialog
     v-model:open="showDropObjectConfirm"
-    :title="
-      node.type === 'procedure' ? t('contextMenu.confirmDropProcedureTitle') : t('contextMenu.confirmDropFunctionTitle')
-    "
-    :message="
-      node.type === 'procedure'
-        ? t('contextMenu.confirmDropProcedureMessage', { name: node.label })
-        : t('contextMenu.confirmDropFunctionMessage', { name: node.label })
-    "
+    :title="dropObjectConfirmTitle()"
+    :message="dropObjectConfirmMessage()"
     :sql="dropObjectPreviewSql"
-    :confirm-label="node.type === 'procedure' ? t('contextMenu.dropProcedure') : t('contextMenu.dropFunction')"
+    :confirm-label="dropObjectMenuLabel()"
     @confirm="confirmDropObject"
+  />
+
+  <DangerConfirmDialog
+    v-model:open="showDropTableChildObjectConfirm"
+    :title="dropTableChildObjectConfirmTitle()"
+    :message="dropTableChildObjectConfirmMessage()"
+    :sql="dropTableChildObjectPreviewSql"
+    :confirm-label="dropTableChildObjectMenuLabel()"
+    @confirm="confirmDropTableChildObject"
   />
 
   <ProcedureExecutionDialog

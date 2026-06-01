@@ -81,6 +81,7 @@ import type { BuildRenameObjectSqlOptions } from "@/lib/objectRenameSql";
 import type { CreateDatabaseSqlOptions } from "@/lib/createDatabaseSql";
 import type {
   DatabaseNameSqlOptions,
+  DropTableChildObjectSqlOptions,
   DropObjectSqlOptions,
   DuplicateTableStructureSqlOptions,
   SchemaNameSqlOptions,
@@ -586,6 +587,10 @@ export async function buildDropObjectSql(options: DropObjectSqlOptions): Promise
 
 export async function buildDropTableSql(options: TableAdminSqlOptions): Promise<string> {
   return post("/api/query/build-drop-table-sql", { options });
+}
+
+export async function buildDropTableChildObjectSql(options: DropTableChildObjectSqlOptions): Promise<string> {
+  return post("/api/query/build-drop-table-child-object-sql", { options });
 }
 
 export async function buildEmptyTableSql(options: TableAdminSqlOptions): Promise<string> {

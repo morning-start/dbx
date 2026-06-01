@@ -1170,6 +1170,7 @@ export const useConnectionStore = defineStore("connection", () => {
           connectionId,
           database,
           schema,
+          tableName: table,
           meta: idx,
         })),
       );
@@ -1210,6 +1211,7 @@ export const useConnectionStore = defineStore("connection", () => {
           connectionId,
           database,
           schema,
+          tableName: table,
           meta: fk,
         })),
       );
@@ -1244,6 +1246,7 @@ export const useConnectionStore = defineStore("connection", () => {
           connectionId,
           database,
           schema,
+          tableName: table,
           meta: tr,
         })),
       );
