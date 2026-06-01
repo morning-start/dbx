@@ -172,7 +172,7 @@ export interface TableInfo {
   parent_name?: string | null;
 }
 
-export type DatabaseObjectType = "TABLE" | "VIEW" | "PROCEDURE" | "FUNCTION";
+export type DatabaseObjectType = "TABLE" | "VIEW" | "PROCEDURE" | "FUNCTION" | "PACKAGE" | "PACKAGE_BODY";
 
 export interface ObjectInfo {
   name: string;
@@ -185,7 +185,7 @@ export interface ObjectInfo {
   parent_name?: string | null;
 }
 
-export type ObjectSourceKind = "VIEW" | "PROCEDURE" | "FUNCTION";
+export type ObjectSourceKind = "VIEW" | "PROCEDURE" | "FUNCTION" | "PACKAGE" | "PACKAGE_BODY";
 
 export interface ObjectSource {
   name: string;
@@ -275,6 +275,8 @@ export type TreeNodeType =
   | "view"
   | "procedure"
   | "function"
+  | "package"
+  | "package-body"
   | "group-columns"
   | "group-indexes"
   | "group-fkeys"
@@ -283,6 +285,7 @@ export type TreeNodeType =
   | "group-views"
   | "group-procedures"
   | "group-functions"
+  | "group-packages"
   | "group-partitions"
   | "object-browser"
   | "saved-sql-root"

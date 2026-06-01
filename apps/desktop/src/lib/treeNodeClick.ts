@@ -16,12 +16,14 @@ export type SidebarActivation = "single" | "double";
 const dataNodeTypes = new Set<TreeNodeType>(["table", "view"]);
 const toggleLeafNodeTypes = new Set<TreeNodeType>(["redis-db", "mongo-collection"]);
 const objectBrowserNodeTypes = new Set<TreeNodeType>(["database", "schema", "object-browser"]);
-const sourceNodeTypes = new Set<TreeNodeType>(["procedure", "function"]);
+const sourceNodeTypes = new Set<TreeNodeType>(["procedure", "function", "package", "package-body"]);
 
 export function objectSourceKindForTreeNode(type: TreeNodeType): ObjectSourceKind | null {
   if (type === "view") return "VIEW";
   if (type === "procedure") return "PROCEDURE";
   if (type === "function") return "FUNCTION";
+  if (type === "package") return "PACKAGE";
+  if (type === "package-body") return "PACKAGE_BODY";
   return null;
 }
 

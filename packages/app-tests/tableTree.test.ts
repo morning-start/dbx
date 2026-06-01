@@ -127,3 +127,26 @@ test("buildGroupedObjectTreeNodes applies prefix-priority sorting inside object 
     ["staff", "staff_his", "chat_staff", "chat_staff_his"],
   );
 });
+
+test("buildGroupedObjectTreeNodes groups Oracle packages and package bodies", () => {
+  const groups = buildGroupedObjectTreeNodes({
+    nodeId: "conn:app:HR",
+    connectionId: "conn",
+    database: "app",
+    schema: "HR",
+    objects: [
+      { name: "PAYROLL", object_type: "PACKAGE", schema: "HR" },
+      { name: "PAYROLL", object_type: "PACKAGE_BODY", schema: "HR" },
+    ],
+  });
+
+  const packageGroup = groups.find((node) => node.type === "group-packages");
+  assert.equal(packageGroup?.label, "tree.packages");
+  assert.deepEqual(
+    packageGroup?.children?.map((node) => ({ label: node.label, type: node.type, id: node.id })),
+    [
+      { label: "PAYROLL", type: "package", id: "conn:app:HR:__packages:HR:PAYROLL:PACKAGE" },
+      { label: "PAYROLL", type: "package-body", id: "conn:app:HR:__packages:HR:PAYROLL:PACKAGE_BODY" },
+    ],
+  );
+});

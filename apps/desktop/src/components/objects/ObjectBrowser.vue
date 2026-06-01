@@ -24,6 +24,7 @@ import {
   PencilLine,
   PencilRuler,
   Play,
+  Package,
   RefreshCw,
   Scissors,
   Search,
@@ -89,7 +90,7 @@ import {
   type ObjectBrowserSortKey,
 } from "@/lib/objectBrowserRows";
 
-type ObjectFilter = "all" | "tables" | "views" | "procedures" | "functions";
+type ObjectFilter = "all" | "tables" | "views" | "procedures" | "functions" | "packages";
 
 const props = defineProps<{
   connection: ConnectionConfig;
@@ -158,6 +159,9 @@ const tableCount = computed(() => rows.value.filter((row) => row.type === "TABLE
 const viewCount = computed(() => rows.value.filter((row) => row.type === "VIEW").length);
 const procedureCount = computed(() => rows.value.filter((row) => row.type === "PROCEDURE").length);
 const functionCount = computed(() => rows.value.filter((row) => row.type === "FUNCTION").length);
+const packageCount = computed(
+  () => rows.value.filter((row) => row.type === "PACKAGE" || row.type === "PACKAGE_BODY").length,
+);
 const canOpenStructureEditor = computed(() => supportsTableStructureEditing(props.connection.db_type));
 const canOpenDiagram = computed(() => !!props.database && supportsSchemaDiagram(props.connection.db_type));
 const canOpenTableImport = computed(() => !!props.database && supportsTableImport(props.connection.db_type));
@@ -186,6 +190,7 @@ const objectFilters = computed<ObjectFilter[]>(() =>
       ["views", viewCount.value],
       ["procedures", procedureCount.value],
       ["functions", functionCount.value],
+      ["packages", packageCount.value],
     ] as Array<[ObjectFilter, number]>
   )
     .filter(([filter, count]) => filter === "all" || count > 0)
@@ -230,6 +235,7 @@ function iconFor(row: ObjectBrowserRow) {
   if (row.type === "VIEW") return Eye;
   if (row.type === "PROCEDURE") return ScrollText;
   if (row.type === "FUNCTION") return Braces;
+  if (row.type === "PACKAGE" || row.type === "PACKAGE_BODY") return Package;
   return Table2;
 }
 
@@ -237,6 +243,8 @@ function typeLabel(type: ObjectBrowserRow["type"]) {
   if (type === "VIEW") return t("objects.view");
   if (type === "PROCEDURE") return t("objects.procedure");
   if (type === "FUNCTION") return t("objects.function");
+  if (type === "PACKAGE") return t("objects.package");
+  if (type === "PACKAGE_BODY") return t("objects.packageBody");
   return t("objects.table");
 }
 
@@ -259,6 +267,7 @@ function rowMatchesObjectFilter(row: ObjectBrowserRow) {
   if (objectFilter.value === "views") return row.type === "VIEW";
   if (objectFilter.value === "procedures") return row.type === "PROCEDURE";
   if (objectFilter.value === "functions") return row.type === "FUNCTION";
+  if (objectFilter.value === "packages") return row.type === "PACKAGE" || row.type === "PACKAGE_BODY";
   return true;
 }
 
@@ -298,6 +307,7 @@ function iconClass(type: ObjectBrowserRow["type"]) {
   if (type === "VIEW") return "text-purple-500";
   if (type === "PROCEDURE") return "text-blue-500";
   if (type === "FUNCTION") return "text-amber-500";
+  if (type === "PACKAGE" || type === "PACKAGE_BODY") return "text-cyan-500";
   return "text-green-500";
 }
 
@@ -314,7 +324,13 @@ function togglePartitionParent(row: ObjectBrowserRow) {
 }
 
 function canOpenSource(row: ObjectBrowserRow) {
-  return row.type === "VIEW" || row.type === "PROCEDURE" || row.type === "FUNCTION";
+  return (
+    row.type === "VIEW" ||
+    row.type === "PROCEDURE" ||
+    row.type === "FUNCTION" ||
+    row.type === "PACKAGE" ||
+    row.type === "PACKAGE_BODY"
+  );
 }
 
 function canRename(row: ObjectBrowserRow) {
@@ -1063,6 +1079,7 @@ function filterCount(filter: ObjectFilter) {
   if (filter === "views") return viewCount.value;
   if (filter === "procedures") return procedureCount.value;
   if (filter === "functions") return functionCount.value;
+  if (filter === "packages") return packageCount.value;
   return rows.value.length;
 }
 
@@ -1076,7 +1093,9 @@ function filterLabel(filter: ObjectFilter) {
           ? "objects.procedures"
           : filter === "functions"
             ? "objects.functions"
-            : "objects.all";
+            : filter === "packages"
+              ? "objects.packages"
+              : "objects.all";
   return `${t(key)} ${filterCount(filter)}`;
 }
 
@@ -1224,9 +1243,18 @@ function getProcFuncMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
   ];
 }
 
+function getPackageMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
+  return [
+    { label: t("contextMenu.viewSource"), action: () => openSource(item), icon: Code2 },
+    { label: "", separator: true },
+    { label: t("contextMenu.copyName"), action: () => copyName(item), icon: Copy },
+  ];
+}
+
 function getObjectBrowserMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
   if (item.type === "TABLE") return getTableMenuItems(item);
   if (item.type === "VIEW") return getViewMenuItems(item);
+  if (item.type === "PACKAGE" || item.type === "PACKAGE_BODY") return getPackageMenuItems(item);
   return getProcFuncMenuItems(item);
 }
 </script>

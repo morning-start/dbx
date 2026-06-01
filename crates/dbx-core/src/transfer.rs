@@ -2259,6 +2259,7 @@ where
                 rewrite_postgres_routine_schema(&object.source, &request.target_schema)
                     .unwrap_or_else(|| object.source.clone())
             }
+            db::ObjectSourceKind::Package | db::ObjectSourceKind::PackageBody => object.source.clone(),
         };
         let statements = build_executable_object_source_statements(EditableObjectSourceSqlInput {
             database_type: DatabaseType::Postgres,

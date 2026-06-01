@@ -32,6 +32,8 @@ pub enum ObjectSourceKind {
     View,
     Procedure,
     Function,
+    Package,
+    PackageBody,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

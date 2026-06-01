@@ -6,7 +6,7 @@ export type ObjectBrowserRow = {
   id: string;
   name: string;
   schema?: string;
-  type: "TABLE" | "VIEW" | "PROCEDURE" | "FUNCTION";
+  type: "TABLE" | "VIEW" | "PROCEDURE" | "FUNCTION" | "PACKAGE" | "PACKAGE_BODY";
   comment?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -21,6 +21,8 @@ export type ObjectBrowserSortDirection = "asc" | "desc";
 
 export function normalizeObjectBrowserType(type: string): ObjectBrowserRow["type"] {
   const value = type.toUpperCase();
+  if (value.includes("PACKAGE BODY") || value.includes("PACKAGE_BODY")) return "PACKAGE_BODY";
+  if (value.includes("PACKAGE")) return "PACKAGE";
   if (value.includes("VIEW")) return "VIEW";
   if (value.includes("PROC")) return "PROCEDURE";
   if (value.includes("FUNC")) return "FUNCTION";

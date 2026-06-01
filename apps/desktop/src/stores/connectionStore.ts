@@ -1321,6 +1321,7 @@ export const useConnectionStore = defineStore("connection", () => {
       node.type === "group-views" ||
       node.type === "group-procedures" ||
       node.type === "group-functions" ||
+      node.type === "group-packages" ||
       node.type === "group-partitions"
     ) {
       node.isExpanded = true;

@@ -45,6 +45,7 @@ import {
   Braces,
   Code2,
   ListFilter,
+  Package,
 } from "lucide-vue-next";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { useConnectionStore } from "@/stores/connectionStore";
@@ -223,6 +224,10 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: ScrollText, colorClass: "text-blue-500" };
     case "function":
       return { icon: Braces, colorClass: "text-amber-500" };
+    case "package":
+      return { icon: Package, colorClass: "text-cyan-500" };
+    case "package-body":
+      return { icon: FileCode, colorClass: "text-cyan-400" };
     case "group-tables":
       return { icon: Table, colorClass: "text-green-500" };
     case "group-views":
@@ -231,6 +236,8 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: ScrollText, colorClass: "text-blue-500" };
     case "group-functions":
       return { icon: Braces, colorClass: "text-amber-500" };
+    case "group-packages":
+      return { icon: Package, colorClass: "text-cyan-500" };
     case "group-partitions":
       return { icon: node.isExpanded ? FolderOpen : FolderClosed, colorClass: "text-green-400" };
     default:
@@ -247,6 +254,7 @@ const groupTypes: Set<TreeNodeType> = new Set([
   "group-views",
   "group-procedures",
   "group-functions",
+  "group-packages",
   "group-partitions",
   "saved-sql-root",
   "saved-sql-folder",
@@ -307,6 +315,7 @@ async function toggle() {
     node.type === "group-views" ||
     node.type === "group-procedures" ||
     node.type === "group-functions" ||
+    node.type === "group-packages" ||
     node.type === "group-partitions"
   ) {
     node.isExpanded = !node.isExpanded;
@@ -400,7 +409,12 @@ function runRowClickAction() {
   const action = treeNodeRowAction(node.type, canExpand.value, settingsStore.editorSettings.sidebarActivation);
   if (action === "open-data") {
     openData();
-  } else if (node.type === "procedure" || node.type === "function") {
+  } else if (
+    node.type === "procedure" ||
+    node.type === "function" ||
+    node.type === "package" ||
+    node.type === "package-body"
+  ) {
     void viewObjectSource();
   } else if (node.type === "saved-sql-file") {
     openSavedSqlFile();
@@ -1628,6 +1642,8 @@ const hasTypeMenu = computed(() => {
     t === "column" ||
     t === "procedure" ||
     t === "function" ||
+    t === "package" ||
+    t === "package-body" ||
     t === "saved-sql-root" ||
     t === "saved-sql-folder" ||
     t === "saved-sql-file" ||
@@ -2224,7 +2240,7 @@ function treeItemMenuItems(): ContextMenuItem[] {
     return items;
   }
 
-  // 8. Procedure / Function
+  // 8. Procedure / Function / Package
   if (node.type === "procedure" || node.type === "function") {
     if (node.type === "procedure") {
       items.push({ label: t("contextMenu.executeProcedure"), action: openProcedureExecution, icon: Play });
@@ -2240,6 +2256,13 @@ function treeItemMenuItems(): ContextMenuItem[] {
       icon: Trash2,
       variant: "destructive" as const,
     });
+    return items;
+  }
+
+  if (node.type === "package" || node.type === "package-body") {
+    items.push({ label: t("contextMenu.viewSource"), action: viewObjectSource, icon: Code2 });
+    items.push({ label: "", separator: true });
+    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy });
     return items;
   }
 
@@ -2369,6 +2392,7 @@ function treeItemMenuItems(): ContextMenuItem[] {
               node.type === 'group-views' ||
               node.type === 'group-procedures' ||
               node.type === 'group-functions' ||
+              node.type === 'group-packages' ||
               node.type === 'group-partitions') &&
             node.objectCount != null
           "

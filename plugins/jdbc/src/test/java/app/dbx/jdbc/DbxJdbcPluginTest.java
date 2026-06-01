@@ -208,6 +208,16 @@ final class DbxJdbcPluginTest {
         assertEquals(true, response.path("result").path(0).path("is_primary_key").asBoolean());
     }
 
+    @Test
+    void oracleMetadataObjectTypeAcceptsPackageBodyAliases() throws Exception {
+        Method method = DbxJdbcPlugin.class.getDeclaredMethod("oracleMetadataObjectType", String.class);
+        method.setAccessible(true);
+
+        assertEquals("PACKAGE_BODY", method.invoke(null, "PACKAGE BODY"));
+        assertEquals("PACKAGE_BODY", method.invoke(null, "PACKAGE_BODY"));
+        assertEquals("PACKAGE", method.invoke(null, "PACKAGE"));
+    }
+
     private static void createPeopleTable() throws Exception {
         request("executeQuery", """
             {

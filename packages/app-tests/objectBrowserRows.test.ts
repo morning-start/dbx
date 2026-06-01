@@ -25,6 +25,26 @@ test("builds unique row ids for overloaded routines with the same visible name",
   );
 });
 
+test("object browser rows normalize Oracle package body objects", () => {
+  const rows = buildObjectBrowserRows({
+    objects: [
+      { name: "PAYROLL", object_type: "PACKAGE", schema: "HR" },
+      { name: "PAYROLL", object_type: "PACKAGE BODY", schema: "HR" },
+    ],
+    database: "orcl",
+    fallbackSchema: "HR",
+    needsSchema: true,
+  });
+
+  assert.deepEqual(
+    rows.map((row) => ({ id: row.id, type: row.type })),
+    [
+      { id: "HR:PAYROLL:PACKAGE:0", type: "PACKAGE" },
+      { id: "HR:PAYROLL:PACKAGE_BODY:0", type: "PACKAGE_BODY" },
+    ],
+  );
+});
+
 test("object browser search matches names, types, and comments but not schema names", () => {
   const rows = buildObjectBrowserRows({
     objects: [

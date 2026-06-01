@@ -130,6 +130,13 @@ public final class DbxJdbcPlugin {
                 optionalText(params, "database"),
                 optionalText(params, "schema")
             );
+            case "getObjectSource", "get_object_source" -> getObjectSource(
+                connection,
+                optionalText(params, "database"),
+                optionalText(params, "schema"),
+                requireText(params, "name"),
+                requireText(params, "object_type")
+            );
             case "getColumns" -> getColumns(
                 connection,
                 optionalText(params, "database"),
@@ -669,7 +676,62 @@ public final class DbxJdbcPlugin {
                 }
             }
         }
+        String packageSql =
+            "SELECT object_name AS name, CASE object_type WHEN 'PACKAGE BODY' THEN 'PACKAGE_BODY' ELSE object_type END AS object_type " +
+            "FROM all_objects WHERE owner = ? AND object_type IN ('PACKAGE', 'PACKAGE BODY') ORDER BY object_type, object_name";
+        try (PreparedStatement ps = conn.prepareStatement(packageSql)) {
+            ps.setString(1, owner);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    ObjectNode item = MAPPER.createObjectNode();
+                    item.put("name", rs.getString("name"));
+                    item.put("object_type", rs.getString("object_type"));
+                    putNullable(item, "schema", schemaLabel);
+                    item.putNull("comment");
+                    result.add(item);
+                }
+            }
+        }
         return result;
+    }
+
+    private static JsonNode getObjectSource(JsonNode connection, String database, String schema, String name, String objectType)
+        throws SQLException {
+        Connection conn = openConnection(connection);
+        if (!driverQuirks(connection).useOracleMetadata()) {
+            throw new SQLException("Object source is not supported by this JDBC driver");
+        }
+        String owner = oracleEffectiveSchema(conn, schema);
+        String metadataType = oracleMetadataObjectType(objectType);
+        String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, metadataType);
+            ps.setString(2, name);
+            ps.setString(3, owner);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    throw new SQLException("Object source not found");
+                }
+                ObjectNode item = MAPPER.createObjectNode();
+                item.put("name", name);
+                item.put("object_type", objectType);
+                putNullable(item, "schema", owner);
+                putNullable(item, "source", rs.getString(1));
+                return item;
+            }
+        }
+    }
+
+    private static String oracleMetadataObjectType(String objectType) {
+        String normalized = objectType == null ? "" : objectType.trim().toUpperCase().replace(' ', '_');
+        return switch (normalized) {
+            case "VIEW" -> "VIEW";
+            case "PROCEDURE" -> "PROCEDURE";
+            case "FUNCTION" -> "FUNCTION";
+            case "PACKAGE" -> "PACKAGE";
+            case "PACKAGE_BODY" -> "PACKAGE_BODY";
+            default -> normalized;
+        };
     }
 
     private static JsonNode oracleGetColumns(Connection conn, String owner, String table) throws SQLException {
