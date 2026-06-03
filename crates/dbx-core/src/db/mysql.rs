@@ -744,6 +744,7 @@ fn list_tables_objects_sql(database: &str) -> String {
            TABLE_COMMENT AS object_comment, \
            CREATE_TIME AS created_at, \
            UPDATE_TIME AS updated_at, \
+           NULL AS parent_schema, NULL AS parent_name, \
            CASE WHEN TABLE_TYPE = 'VIEW' THEN 1 ELSE 0 END AS sort_order \
          FROM information_schema.TABLES \
          WHERE TABLE_SCHEMA = {db} \
@@ -756,10 +757,24 @@ fn list_routines_sql(database: &str) -> String {
     format!(
         "SELECT ROUTINE_NAME AS object_name, ROUTINE_TYPE AS object_type, NULL AS object_comment, \
            NULL AS created_at, NULL AS updated_at, \
+           NULL AS parent_schema, NULL AS parent_name, \
            CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN 2 ELSE 3 END AS sort_order \
          FROM information_schema.ROUTINES \
          WHERE ROUTINE_SCHEMA = {db} AND ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION') \
          ORDER BY sort_order, object_name",
+        db = quote_value(database),
+    )
+}
+
+fn list_completion_triggers_sql(database: &str) -> String {
+    format!(
+        "SELECT TRIGGER_NAME AS object_name, 'TRIGGER' AS object_type, NULL AS object_comment, \
+           CREATED AS created_at, NULL AS updated_at, \
+           TRIGGER_SCHEMA AS parent_schema, EVENT_OBJECT_TABLE AS parent_name, \
+           4 AS sort_order \
+         FROM information_schema.TRIGGERS \
+         WHERE TRIGGER_SCHEMA = {db} \
+         ORDER BY object_name",
         db = quote_value(database),
     )
 }
@@ -772,8 +787,8 @@ fn row_to_object(row: &mysql_async::Row, database: &str) -> ObjectInfo {
         comment: get_opt_str(row, "object_comment").filter(|s| !s.is_empty()),
         created_at: get_opt_str(row, "created_at"),
         updated_at: get_opt_str(row, "updated_at"),
-        parent_schema: None,
-        parent_name: None,
+        parent_schema: get_opt_str(row, "parent_schema"),
+        parent_name: get_opt_str(row, "parent_name"),
     }
 }
 
@@ -801,6 +816,31 @@ pub async fn list_objects(pool: &MySqlPool, database: &str) -> Result<Vec<Object
         Err(e) => {
             log::warn!("Skipping routines for database `{}` in object browser: {}", database, e);
         }
+    }
+
+    Ok(objects)
+}
+
+pub async fn list_completion_objects(pool: &MySqlPool, database: &str) -> Result<Vec<ObjectInfo>, String> {
+    let mut conn = pool.get_conn().await.map_err(|e| e.to_string())?;
+    let mut objects = Vec::new();
+
+    let routines_sql = list_routines_sql(database);
+    match conn.query_iter(&routines_sql).await {
+        Ok(result) => match result.collect_and_drop::<mysql_async::Row>().await {
+            Ok(rows) => objects.extend(rows.iter().map(|row| row_to_object(row, database))),
+            Err(e) => log::warn!("Skipping routines for completion in database `{}`: {}", database, e),
+        },
+        Err(e) => log::warn!("Skipping routines for completion in database `{}`: {}", database, e),
+    }
+
+    let triggers_sql = list_completion_triggers_sql(database);
+    match conn.query_iter(&triggers_sql).await {
+        Ok(result) => match result.collect_and_drop::<mysql_async::Row>().await {
+            Ok(rows) => objects.extend(rows.iter().map(|row| row_to_object(row, database))),
+            Err(e) => log::warn!("Skipping triggers for completion in database `{}`: {}", database, e),
+        },
+        Err(e) => log::warn!("Skipping triggers for completion in database `{}`: {}", database, e),
     }
 
     Ok(objects)
@@ -1287,6 +1327,16 @@ mod tests {
         assert!(sql.contains("'FUNCTION'"));
         assert!(!sql.contains("LAST_ALTERED"));
         assert!(!sql.contains("CREATED AS created_at"));
+    }
+
+    #[test]
+    fn mysql_completion_triggers_sql_lists_database_triggers() {
+        let sql = list_completion_triggers_sql("app");
+
+        assert!(sql.contains("information_schema.TRIGGERS"));
+        assert!(sql.contains("'TRIGGER' AS object_type"));
+        assert!(sql.contains("EVENT_OBJECT_TABLE AS parent_name"));
+        assert!(sql.contains("TRIGGER_SCHEMA = 'app'"));
     }
 
     #[test]

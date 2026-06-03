@@ -57,7 +57,7 @@ import {
   shouldRunSqlSemanticDiagnostics,
   type SqlSemanticDiagnostic,
 } from "@/lib/sqlSemanticDiagnostics";
-import type { SqlCompletionColumn, SqlCompletionForeignKey } from "@/lib/sqlCompletion";
+import type { SqlCompletionColumn, SqlCompletionForeignKey, SqlCompletionObject } from "@/lib/sqlCompletion";
 import type {
   DatabaseType,
   ForeignKeyInfo,
@@ -201,6 +201,7 @@ function editorThemeAppearance() {
 
 // Completion cache
 let cachedTables: Array<{ name: string; schema?: string; type?: "table" | "view" }> = [];
+let cachedCompletionObjects: SqlCompletionObject[] = [];
 // Persistent column cache keyed by "schema.table" or "table"
 const cachedColumnsByTable = new Map<string, SqlCompletionColumn[]>();
 const cachedForeignKeysByTable = new Map<string, SqlCompletionForeignKey[]>();
@@ -892,6 +893,7 @@ async function provideSqlCompletions(
     if (!hasDatabase) {
       const items = buildSqlCompletionItemsFromContext(completionContext, {
         tables: [],
+        objects: [],
         columnsByTable: new Map(),
         schemas: [],
         translations: completionTranslations.value,
@@ -903,6 +905,8 @@ async function provideSqlCompletions(
 
     const needsAsyncData =
       completionContext.suggestTables ||
+      completionContext.suggestRoutines ||
+      completionContext.exclusiveRoutineSuggestions ||
       !!completionContext.qualifier ||
       !!completionContext.insertTable ||
       completionContext.exclusiveColumnSuggestions ||
@@ -911,6 +915,7 @@ async function provideSqlCompletions(
     if (!needsAsyncData) {
       const items = buildSqlCompletionItemsFromContext(completionContext, {
         tables: [],
+        objects: [],
         columnsByTable: new Map(),
         schemas: [],
         translations: completionTranslations.value,
@@ -989,6 +994,35 @@ async function performAsyncCompletionWithResult(
       )
     : cachedTables;
   if (epoch !== completionEpoch) return null;
+
+  const shouldLoadObjects =
+    completionContext.suggestRoutines ||
+    completionContext.exclusiveRoutineSuggestions ||
+    (!!completionContext.qualifier && !completionContext.exclusiveColumnSuggestions);
+  let completionObjects = shouldLoadObjects
+    ? await connectionStore.listCompletionObjects(
+        props.connectionId!,
+        props.database!,
+        completionContext.qualifier || completionContext.prefix,
+        MAX_COMPLETION_TABLES,
+      )
+    : cachedCompletionObjects;
+  if (epoch !== completionEpoch) return null;
+
+  if (completionContext.qualifier && completionObjects.length === 0) {
+    const schemaObjects = await connectionStore.listCompletionObjects(
+      props.connectionId!,
+      props.database!,
+      completionContext.prefix,
+      MAX_COMPLETION_TABLES,
+      completionContext.qualifier,
+    );
+    if (schemaObjects.length > 0) {
+      completionObjects = schemaObjects;
+    }
+    if (epoch !== completionEpoch) return null;
+  }
+  cachedCompletionObjects = mergeCompletionObjects(cachedCompletionObjects, completionObjects);
 
   // Fetch schemas for schema completion
   let schemaNames: string[] = [];
@@ -1142,6 +1176,7 @@ async function performAsyncCompletionWithResult(
 
   const items = buildSqlCompletionItemsFromContext(effectiveContext, {
     tables,
+    objects: completionObjects,
     columnsByTable,
     foreignKeysByTable,
     schemas: schemaNames,
@@ -1161,8 +1196,25 @@ function isReferencedTableQualifier(completionContext: ReturnType<typeof getSqlC
   );
 }
 
+function mergeCompletionObjects(existing: SqlCompletionObject[], incoming: SqlCompletionObject[]) {
+  const merged = [...existing];
+  const seen = new Set(
+    existing.map((object) =>
+      `${object.type}:${object.schema ?? ""}:${object.name}:${object.parentName ?? ""}`.toLowerCase(),
+    ),
+  );
+  for (const object of incoming) {
+    const key = `${object.type}:${object.schema ?? ""}:${object.name}:${object.parentName ?? ""}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(object);
+  }
+  return merged;
+}
+
 async function refreshCompletionCache() {
   cachedTables = [];
+  cachedCompletionObjects = [];
   cachedColumnsByTable.clear();
   cachedForeignKeysByTable.clear();
 }
@@ -1566,6 +1618,7 @@ onMounted(async () => {
   registerTableReferenceDropListener();
 
   cachedTables = [];
+  cachedCompletionObjects = [];
   scheduleSemanticDiagnostics();
 });
 

@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { uuid } from "@/lib/utils";
 import { ref, computed, watch } from "vue";
-import type { ColumnInfo, ConnectionConfig, SidebarLayout, TreeNode } from "@/types/database";
+import type { ColumnInfo, ConnectionConfig, ObjectInfo, SidebarLayout, TreeNode } from "@/types/database";
 import { applyPinnedTreeNodeState, orderPinnedFirst } from "@/lib/pinnedItems";
 import {
   reconcileLayout,
@@ -17,7 +17,7 @@ import {
   reorderEntry as reorderEntryOp,
   type DropPosition,
 } from "@/lib/sidebarLayout";
-import type { SqlCompletionColumn, SqlCompletionTable } from "@/lib/sqlCompletion";
+import type { SqlCompletionColumn, SqlCompletionObject, SqlCompletionTable } from "@/lib/sqlCompletion";
 import * as api from "@/lib/api";
 import { isTauriRuntime } from "@/lib/tauriRuntime";
 import { isSchemaAware, usesTreeSchemaMode } from "@/lib/databaseCapabilities";
@@ -98,6 +98,7 @@ export const useConnectionStore = defineStore("connection", () => {
   const editingConnectionId = ref<string | null>(null);
   const newConnectionGroupId = ref<string | null>(null);
   const completionTablesCache = ref<Record<string, SqlCompletionTable[]>>({});
+  const completionObjectsCache = ref<Record<string, SqlCompletionObject[]>>({});
   const completionColumnsCache = ref<Record<string, ColumnInfo[]>>({});
   const schemaListCache = ref<Record<string, string[]>>({});
   const transferSource = ref<{ connectionId: string; database: string } | null>(null);
@@ -551,6 +552,9 @@ export const useConnectionStore = defineStore("connection", () => {
     const exactCacheKey = database == null ? null : `${connectionId}:${database}`;
     for (const key of Object.keys(completionTablesCache.value)) {
       if (key === exactCacheKey || key.startsWith(cachePrefix)) delete completionTablesCache.value[key];
+    }
+    for (const key of Object.keys(completionObjectsCache.value)) {
+      if (key === exactCacheKey || key.startsWith(cachePrefix)) delete completionObjectsCache.value[key];
     }
     for (const key of Object.keys(completionColumnsCache.value)) {
       if (key === exactCacheKey || key.startsWith(cachePrefix)) delete completionColumnsCache.value[key];
@@ -1579,6 +1583,105 @@ export const useConnectionStore = defineStore("connection", () => {
     return deduped;
   }
 
+  async function listCompletionObjects(
+    connectionId: string,
+    database: string,
+    filter = "",
+    limit?: number,
+    schema?: string,
+  ): Promise<SqlCompletionObject[]> {
+    const normalizedFilter = filter.trim().toLowerCase();
+    const cacheKey = `${connectionId}:${database}:${schema ?? ""}`;
+    if (!completionObjectsCache.value[cacheKey]) {
+      await ensureConnected(connectionId);
+      const objects = isSchemaAwareDatabase(connectionId)
+        ? await listSchemaAwareCompletionObjects(connectionId, database, schema)
+        : await api.listCompletionObjects(connectionId, database, schema || database);
+      completionObjectsCache.value[cacheKey] = dedupeCompletionObjects(
+        objects.map(toSqlCompletionObject).filter((object): object is SqlCompletionObject => object != null),
+      );
+      evictOldestCacheEntries(completionObjectsCache.value, COMPLETION_CACHE_MAX);
+    }
+
+    const objects = completionObjectsCache.value[cacheKey];
+    const filtered = normalizedFilter
+      ? objects.filter((object) => fuzzyCompletionObjectMatch(object, normalizedFilter))
+      : objects;
+    return typeof limit === "number" ? filtered.slice(0, expandedCompletionLimit(limit)) : filtered;
+  }
+
+  async function listSchemaAwareCompletionObjects(
+    connectionId: string,
+    database: string,
+    schema?: string,
+  ): Promise<ObjectInfo[]> {
+    const schemas = schema ? [schema] : await listCompletionSchemas(connectionId, database);
+    const batchSize = 5;
+    const results: ObjectInfo[] = [];
+    for (let i = 0; i < schemas.length; i += batchSize) {
+      const batch = schemas.slice(i, i + batchSize);
+      const groups = await Promise.all(
+        batch.map(async (s) => {
+          try {
+            return await api.listCompletionObjects(connectionId, database, s);
+          } catch {
+            return [] as ObjectInfo[];
+          }
+        }),
+      );
+      for (const group of groups) results.push(...group);
+    }
+    return results;
+  }
+
+  function toSqlCompletionObject(object: ObjectInfo): SqlCompletionObject | null {
+    const objectType = object.object_type.toUpperCase();
+    const type = objectType.includes("PROCEDURE")
+      ? "procedure"
+      : objectType.includes("FUNCTION")
+        ? "function"
+        : objectType.includes("TRIGGER")
+          ? "trigger"
+          : null;
+    if (!type) return null;
+    return {
+      name: object.name,
+      schema: object.schema ?? undefined,
+      type,
+      parentSchema: object.parent_schema ?? undefined,
+      parentName: object.parent_name ?? undefined,
+    };
+  }
+
+  function fuzzyCompletionObjectMatch(object: SqlCompletionObject, filter: string): boolean {
+    return fuzzyTextMatch(object.name, filter) || (!!object.schema && fuzzyTextMatch(object.schema, filter));
+  }
+
+  function fuzzyTextMatch(value: string, filter: string): boolean {
+    if (!filter) return true;
+    const text = value.toLowerCase();
+    if (text.includes(filter)) return true;
+    let index = 0;
+    for (const ch of filter) {
+      index = text.indexOf(ch, index);
+      if (index < 0) return false;
+      index++;
+    }
+    return true;
+  }
+
+  function dedupeCompletionObjects(objects: SqlCompletionObject[]): SqlCompletionObject[] {
+    const seen = new Set<string>();
+    const deduped: SqlCompletionObject[] = [];
+    for (const object of objects) {
+      const key = `${object.type}:${object.schema ?? ""}:${object.name}:${object.parentName ?? ""}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(object);
+    }
+    return deduped;
+  }
+
   async function listCompletionColumns(
     connectionId: string,
     database: string,
@@ -1987,6 +2090,7 @@ export const useConnectionStore = defineStore("connection", () => {
     loadForeignKeys,
     loadTriggers,
     listCompletionTables,
+    listCompletionObjects,
     listCompletionColumns,
     listCompletionSchemas,
     exportConnectionsToFile,

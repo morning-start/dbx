@@ -372,6 +372,14 @@ export async function listObjects(connectionId: string, database: string, schema
   return get(`/api/schema/objects?${qs({ connection_id: connectionId, database, schema })}`);
 }
 
+export async function listCompletionObjects(
+  connectionId: string,
+  database: string,
+  schema: string,
+): Promise<ObjectInfo[]> {
+  return get(`/api/schema/completion-objects?${qs({ connection_id: connectionId, database, schema })}`);
+}
+
 export async function getObjectSource(
   connectionId: string,
   database: string,

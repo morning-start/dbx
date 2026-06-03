@@ -519,6 +519,18 @@ pub async fn list_objects_core(
     .await
 }
 
+pub async fn list_completion_objects_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+) -> Result<Vec<db::ObjectInfo>, String> {
+    retry_metadata_connection(state, connection_id, Some(database), || {
+        list_completion_objects_once(state, connection_id, database, schema)
+    })
+    .await
+}
+
 async fn list_objects_once(
     state: &AppState,
     connection_id: &str,
@@ -606,6 +618,68 @@ async fn list_objects_once(
                 .collect())
         }
     }
+}
+
+async fn list_completion_objects_once(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+) -> Result<Vec<db::ObjectInfo>, String> {
+    let pool_key = state.get_or_create_pool(connection_id, Some(database)).await?;
+    let db_config = connection_config(state, connection_id).await;
+
+    let connections = state.connections.read().await;
+    if let Some(PoolKind::ExternalDriver { config, session, .. }) = connections.get(&pool_key) {
+        let config = config.clone();
+        let session = session.clone();
+        drop(connections);
+        return session
+            .invoke::<Vec<db::ObjectInfo>>(
+                "listObjects",
+                serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+            )
+            .await
+            .map(filter_completion_objects);
+    }
+    if let Some(client) = extract_pool!(&connections, &pool_key, Agent) {
+        let is_oracle = db_config.as_ref().is_some_and(|config| config.db_type == DatabaseType::Oracle);
+        drop(connections);
+        let objects = if is_oracle {
+            oracle_agent_list_objects(client, database, schema).await?
+        } else {
+            let mut client = client.lock().await;
+            client.list_objects(database, schema).await?
+        };
+        return Ok(filter_completion_objects(objects));
+    }
+
+    let pool = connections.get(&pool_key).ok_or("Pool not found")?;
+    match pool {
+        PoolKind::Mysql(p, mode) if *mode != MysqlMode::OceanBaseOracle => {
+            db::mysql::list_completion_objects(p, database).await
+        }
+        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
+            db::ob_oracle::list_objects(p, schema).await.map(filter_completion_objects)
+        }
+        PoolKind::Postgres(p) => db::postgres::list_objects(p, schema).await.map(filter_completion_objects),
+        PoolKind::SqlServer(_) => {
+            drop(connections);
+            let objects = list_objects_once(state, connection_id, database, schema).await?;
+            Ok(filter_completion_objects(objects))
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn filter_completion_objects(objects: Vec<db::ObjectInfo>) -> Vec<db::ObjectInfo> {
+    objects
+        .into_iter()
+        .filter(|object| {
+            let object_type = object.object_type.to_ascii_uppercase();
+            object_type.contains("PROCEDURE") || object_type.contains("FUNCTION") || object_type.contains("TRIGGER")
+        })
+        .collect()
 }
 
 async fn retry_metadata_connection<T, F, Fut>(

@@ -600,6 +600,14 @@ export interface SqlCompletionTable {
   type?: "table" | "view";
 }
 
+export interface SqlCompletionObject {
+  name: string;
+  schema?: string;
+  type: "procedure" | "function" | "trigger";
+  parentSchema?: string;
+  parentName?: string;
+}
+
 export interface SqlCompletionColumn {
   name: string;
   table: string;
@@ -639,9 +647,11 @@ export interface SqlCompletionContext {
   suggestTables: boolean;
   suggestColumns: boolean;
   suggestKeywords: boolean;
+  suggestRoutines: boolean;
   suggestJoinConditions: boolean;
   exclusiveTableSuggestions: boolean;
   exclusiveColumnSuggestions: boolean;
+  exclusiveRoutineSuggestions: boolean;
   prioritizeSelectAliases: boolean;
   selectAliases: string[];
   referencedTables: SqlCompletionReferencedTable[];
@@ -678,6 +688,7 @@ export function buildSqlCompletionItems(
   cursor: number,
   input: {
     tables: SqlCompletionTable[];
+    objects?: SqlCompletionObject[];
     columnsByTable: Map<string, SqlCompletionColumn[]>;
     foreignKeysByTable?: Map<string, SqlCompletionForeignKey[]>;
     schemas?: string[];
@@ -693,6 +704,7 @@ export function buildSqlCompletionItemsFromContext(
   context: SqlCompletionContext,
   input: {
     tables: SqlCompletionTable[];
+    objects?: SqlCompletionObject[];
     columnsByTable: Map<string, SqlCompletionColumn[]>;
     foreignKeysByTable?: Map<string, SqlCompletionForeignKey[]>;
     schemas?: string[];
@@ -705,29 +717,44 @@ export function buildSqlCompletionItemsFromContext(
   const t = input.translations;
   const dialect = input.dialect;
 
-  if (!context.exclusiveTableSuggestions && !context.exclusiveColumnSuggestions) {
+  if (
+    !context.exclusiveTableSuggestions &&
+    !context.exclusiveColumnSuggestions &&
+    !context.exclusiveRoutineSuggestions
+  ) {
     items.push(...buildSnippetItems(context.prefix, input.snippets ?? DEFAULT_SQL_SNIPPETS));
     items.push(...buildFunctionSnippetItems(context.prefix, getFunctionDescriptions(t)));
   }
 
-  if (!context.exclusiveTableSuggestions && !context.exclusiveColumnSuggestions && context.prioritizeSelectAliases) {
+  if (
+    !context.exclusiveTableSuggestions &&
+    !context.exclusiveColumnSuggestions &&
+    !context.exclusiveRoutineSuggestions &&
+    context.prioritizeSelectAliases
+  ) {
     items.push(...buildSelectAliasItems(context));
   }
 
   if (
     !context.exclusiveTableSuggestions &&
     !context.exclusiveColumnSuggestions &&
+    !context.exclusiveRoutineSuggestions &&
     context.isGroupBy &&
     context.nonAggregatedSelectColumns.length > 0
   ) {
     items.push(...buildNonAggregatedColumnItems(context, input.columnsByTable, dialect));
   }
 
-  if (!context.exclusiveTableSuggestions && !context.exclusiveColumnSuggestions && context.suggestJoinConditions) {
+  if (
+    !context.exclusiveTableSuggestions &&
+    !context.exclusiveColumnSuggestions &&
+    !context.exclusiveRoutineSuggestions &&
+    context.suggestJoinConditions
+  ) {
     items.push(...buildJoinConditionItems(context, input.columnsByTable, input.foreignKeysByTable, dialect));
   }
 
-  if (context.suggestKeywords) {
+  if (context.suggestKeywords && !context.exclusiveRoutineSuggestions) {
     items.push(...buildKeywordItems(context.prefix, context));
   }
 
@@ -745,6 +772,10 @@ export function buildSqlCompletionItemsFromContext(
     if (input.schemas && input.schemas.length > 0) {
       items.push(...buildSchemaItems(context.prefix, input.schemas, dialect));
     }
+  }
+
+  if (context.suggestRoutines || context.exclusiveRoutineSuggestions) {
+    items.push(...buildObjectItems(context, input.objects ?? [], dialect));
   }
 
   // Type-aware value hints after comparison operator
@@ -765,9 +796,17 @@ export function shouldAutoOpenSqlCompletion(sql: string, cursor: number): boolea
   const previousChar = sql[cursor - 1];
   if (!previousChar) return false;
   if (/\bon\s+$/i.test(sql.slice(0, cursor))) return true;
+  if (/\bcall\s+(?:[A-Za-z_][\w$]*\.)?$/i.test(sql.slice(0, cursor))) return true;
   if (/[,;()[\]]/.test(previousChar)) return false;
   const context = getSqlCompletionContext(sql, cursor);
-  if (context.exclusiveTableSuggestions || context.exclusiveColumnSuggestions || context.suggestTables) return true;
+  if (
+    context.exclusiveTableSuggestions ||
+    context.exclusiveColumnSuggestions ||
+    context.exclusiveRoutineSuggestions ||
+    context.suggestTables
+  ) {
+    return true;
+  }
   return /[\w$.]/.test(previousChar);
 }
 
@@ -859,6 +898,13 @@ function detectStatementKind(previousStatements: string): SqlStatementKind {
   return kindMap[firstWord] ?? "unknown";
 }
 
+function isCallRoutineContext(beforeToken: string): boolean {
+  return (
+    /\bcall\s+(?:[A-Za-z_][\w$]*\.)?$/i.test(beforeToken) ||
+    /\bcall\s+(?:[A-Za-z_][\w$]*\.)?[A-Za-z_][\w$]*$/i.test(beforeToken)
+  );
+}
+
 export function getSqlCompletionContext(sql: string, cursor: number): SqlCompletionContext {
   // Extract the full statement at cursor position for referenced tables
   const fullStatement = extractStatementAt(sql, cursor);
@@ -917,6 +963,7 @@ export function getSqlCompletionContext(sql: string, cursor: number): SqlComplet
   const inColumnContext = isInColumnContext(beforeCursor) || !!insertInfo;
   const inJoinConditionContext = isInJoinConditionContext(beforeCursor);
   const prioritizeSelectAliases = isInOrderOrGroupByContext(beforeCursor);
+  const inCallRoutineContext = isCallRoutineContext(beforeCursor);
 
   const statementKind = detectStatementKind(beforeCursor || fullStatement);
 
@@ -925,10 +972,14 @@ export function getSqlCompletionContext(sql: string, cursor: number): SqlComplet
     qualifier: insertInfo ? undefined : qualifier,
     suggestTables: insertInfo ? false : afterTableTrigger,
     suggestColumns: !!qualifier || (inColumnContext && referencedTables.length > 0),
-    suggestKeywords: !exclusiveTableSuggestions && !exclusiveColumnSuggestions && !insertInfo,
+    suggestKeywords: !exclusiveTableSuggestions && !exclusiveColumnSuggestions && !insertInfo && !inCallRoutineContext,
+    suggestRoutines:
+      inCallRoutineContext ||
+      (!exclusiveTableSuggestions && !exclusiveColumnSuggestions && !insertInfo && prefix.length >= 2),
     suggestJoinConditions: insertInfo ? false : inJoinConditionContext && referencedTables.length >= 2,
     exclusiveTableSuggestions: insertInfo ? false : exclusiveTableSuggestions,
     exclusiveColumnSuggestions: exclusiveColumnSuggestions || !!insertInfo,
+    exclusiveRoutineSuggestions: inCallRoutineContext,
     prioritizeSelectAliases: insertInfo ? false : prioritizeSelectAliases,
     selectAliases: prioritizeSelectAliases ? extractSelectAliases(fullStatement) : [],
     referencedTables,
@@ -1545,6 +1596,39 @@ function buildSchemaItems(
       apply: `${quoteSqlIdentifier(schema, dialect)}.`,
       boost: computeBoost(schema, prefix) + 1500,
     }));
+}
+
+function buildObjectItems(
+  context: SqlCompletionContext,
+  objects: SqlCompletionObject[],
+  dialect?: "mysql" | "postgres" | "sqlserver",
+): SqlCompletionItem[] {
+  const onlyProcedures = context.exclusiveRoutineSuggestions;
+  return objects
+    .filter((object) => (!onlyProcedures || object.type === "procedure") && matchesPrefix(object.name, context.prefix))
+    .map((object) => {
+      const applyName =
+        context.qualifier && object.schema?.toLowerCase() === context.qualifier.toLowerCase()
+          ? quoteSqlIdentifier(object.name, dialect)
+          : object.schema
+            ? `${quoteSqlIdentifier(object.schema, dialect)}.${quoteSqlIdentifier(object.name, dialect)}`
+            : quoteSqlIdentifier(object.name, dialect);
+      const detail =
+        object.type === "trigger" && object.parentName
+          ? `trigger on ${object.parentName}`
+          : object.schema
+            ? `${object.type} in ${object.schema}`
+            : object.type;
+      return {
+        label: object.name,
+        type: "function" as const,
+        detail,
+        apply: object.type === "trigger" ? applyName : `${applyName}()`,
+        boost: computeBoost(object.name, context.prefix) + (object.type === "procedure" ? 1800 : 900),
+      };
+    })
+    .sort(compareCompletionItems)
+    .slice(0, MAX_TABLE_COMPLETION_ITEMS);
 }
 
 function buildStarExpansionItem(

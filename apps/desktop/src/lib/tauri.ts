@@ -407,6 +407,14 @@ export async function listObjects(connectionId: string, database: string, schema
   return invoke("list_objects", { connectionId, database, schema });
 }
 
+export async function listCompletionObjects(
+  connectionId: string,
+  database: string,
+  schema: string,
+): Promise<ObjectInfo[]> {
+  return invoke("list_completion_objects", { connectionId, database, schema });
+}
+
 export async function getObjectSource(
   connectionId: string,
   database: string,

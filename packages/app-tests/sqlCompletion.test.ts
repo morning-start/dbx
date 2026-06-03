@@ -10,6 +10,7 @@ import {
   recordCompletionSelection,
   type SqlCompletionColumn,
   type SqlCompletionForeignKey,
+  type SqlCompletionObject,
   type SqlCompletionTable,
 } from "../../apps/desktop/src/lib/sqlCompletion.ts";
 
@@ -38,6 +39,12 @@ const columnsByTable = new Map<string, SqlCompletionColumn[]>([
     ],
   ],
 ]);
+
+const completionObjects: SqlCompletionObject[] = [
+  { name: "refresh_user_stats", schema: "app", type: "procedure" },
+  { name: "format_user_name", schema: "app", type: "function" },
+  { name: "trg_users_audit", schema: "app", type: "trigger", parentName: "users" },
+];
 
 const postgresQuotedTables: SqlCompletionTable[] = [
   { name: "article", schema: "public", type: "table" },
@@ -513,6 +520,45 @@ test("suggests DATE_FORMAT as parameter snippet", () => {
   const snippet = items.find((item) => item.type === "function" && item.label === "DATE_FORMAT");
   assert.ok(snippet);
   assert.equal(snippet.apply, "DATE_FORMAT(${date}, ${format})");
+});
+
+test("suggests stored procedures after CALL", () => {
+  const sql = "CALL rfs";
+  const items = buildSqlCompletionItems(sql, sql.length, {
+    tables,
+    objects: completionObjects,
+    columnsByTable,
+    dialect: "mysql",
+  });
+
+  const procedure = items.find((item) => item.label === "refresh_user_stats");
+  assert.ok(procedure);
+  assert.equal(procedure.type, "function");
+  assert.equal(procedure.apply, "app.refresh_user_stats()");
+  assert.equal(
+    items.some((item) => item.label === "format_user_name"),
+    false,
+  );
+});
+
+test("suggests user functions and triggers with fuzzy matching", () => {
+  const sql = "select fun";
+  const items = buildSqlCompletionItems(sql, sql.length, {
+    tables,
+    objects: completionObjects,
+    columnsByTable,
+    dialect: "mysql",
+  });
+
+  assert.ok(items.some((item) => item.label === "format_user_name" && item.detail === "function in app"));
+
+  const triggerItems = buildSqlCompletionItems("drop trigger tua", "drop trigger tua".length, {
+    tables,
+    objects: completionObjects,
+    columnsByTable,
+    dialect: "mysql",
+  });
+  assert.ok(triggerItems.some((item) => item.label === "trg_users_audit" && item.detail === "trigger on users"));
 });
 
 test("matches alias qualifier case-insensitively", () => {
