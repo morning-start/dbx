@@ -1943,7 +1943,7 @@ watch(
                           width:
                             editingShortcutId === definition.id
                               ? shortcutPressShortcutInputWidth
-                              : `${Math.max(4, formatShortcutPill(editShortcuts[definition.id]).length + 2)}ch`,
+                              : `${Math.max(4, formatShortcutPill(editShortcuts[definition.id]).length + 3)}ch`,
                         }"
                         readonly
                         :aria-invalid="shortcutConflicts.includes(definition.id)"
