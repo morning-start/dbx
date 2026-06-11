@@ -112,11 +112,20 @@ async fn try_authenticate_with_agent(
     ssh_user: &str,
     connect_timeout: &Duration,
 ) -> Result<(), String> {
+    #[cfg(unix)]
     let mut agent = match AgentClient::connect_env().await {
         Ok(a) => a,
         Err(e) => {
             return Err(format!("No SSH password or key provided, and ssh-agent is unavailable: {e}"));
         }
+    };
+
+    #[cfg(windows)]
+    let mut agent = {
+        let stream = pageant::PageantStream::new()
+            .await
+            .map_err(|e| format!("No SSH password or key provided, and ssh-agent (Pageant) is unavailable: {e}"))?;
+        AgentClient::connect(stream)
     };
 
     let identities = match agent.request_identities().await {
