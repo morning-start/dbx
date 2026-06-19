@@ -1,7 +1,8 @@
 use crate::query::MAX_ROWS;
 use crate::sql::starts_with_executable_sql_keyword;
 use crate::types::{
-    ColumnInfo, DatabaseInfo, ForeignKeyInfo, IndexInfo, LinkedServerInfo, QueryResult, TableInfo, TriggerInfo,
+    ColumnInfo, DatabaseInfo, ForeignKeyInfo, IndexInfo, LinkedServerInfo, ObjectStatistics, QueryResult, TableInfo,
+    TriggerInfo,
 };
 use futures::{FutureExt, TryStreamExt};
 use rust_decimal::Decimal;
@@ -927,6 +928,44 @@ fn sqlserver_list_objects_sql(schema: &str) -> String {
            ELSE 3 \
          END, o.name"
     )
+}
+
+pub async fn list_object_statistics(
+    client: &mut SqlServerClient,
+    schema: &str,
+) -> Result<Vec<ObjectStatistics>, String> {
+    let s = schema.replace('\'', "''");
+    let sql = format!(
+        "SELECT o.name, \
+                SUM(CASE WHEN ps.index_id IN (0, 1) THEN ps.row_count ELSE 0 END) AS estimated_rows, \
+                SUM(ps.reserved_page_count) * 8192 AS total_bytes \
+         FROM sys.objects o \
+         JOIN sys.schemas s ON s.schema_id = o.schema_id \
+         JOIN sys.dm_db_partition_stats ps ON ps.object_id = o.object_id \
+         WHERE s.name = '{s}' AND o.type = 'U' AND o.is_ms_shipped = 0 \
+         GROUP BY o.object_id, o.name \
+         ORDER BY o.name"
+    );
+    let stream = client.query(&*sql, &[]).await.map_err(|e| e.to_string())?;
+    let rows = stream.into_first_result().await.map_err(|e| e.to_string())?;
+    Ok(rows
+        .iter()
+        .map(|row| ObjectStatistics {
+            name: row.get::<&str, _>(0).unwrap_or("").to_string(),
+            schema: Some(schema.to_string()),
+            estimated_rows: row
+                .try_get::<i64, _>(1)
+                .ok()
+                .flatten()
+                .or_else(|| row.try_get::<i32, _>(1).ok().flatten().map(i64::from)),
+            total_bytes: row
+                .try_get::<i64, _>(2)
+                .ok()
+                .flatten()
+                .or_else(|| row.try_get::<i32, _>(2).ok().flatten().map(i64::from)),
+        })
+        .filter(|stat| !stat.name.is_empty())
+        .collect())
 }
 
 pub async fn get_columns(client: &mut SqlServerClient, schema: &str, table: &str) -> Result<Vec<ColumnInfo>, String> {

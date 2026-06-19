@@ -237,6 +237,13 @@ export interface ObjectInfo {
   parent_name?: string | null;
 }
 
+export interface ObjectStatistics {
+  name: string;
+  schema?: string | null;
+  estimated_rows?: number | null;
+  total_bytes?: number | null;
+}
+
 export type ObjectSourceKind = "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "SEQUENCE" | "PACKAGE" | "PACKAGE_BODY";
 
 export interface ObjectSource {

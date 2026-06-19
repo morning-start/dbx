@@ -380,6 +380,7 @@ pub fn run() {
             commands::schema::list_sqlserver_linked_server_tables,
             commands::schema::list_tables,
             commands::schema::list_objects,
+            commands::schema::list_object_statistics,
             commands::schema::list_completion_objects,
             commands::schema::get_object_source,
             commands::schema::list_schemas,

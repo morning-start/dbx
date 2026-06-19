@@ -1004,6 +1004,18 @@ pub async fn list_objects_core(
     .await
 }
 
+pub async fn list_object_statistics_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+) -> Result<Vec<db::ObjectStatistics>, String> {
+    retry_metadata_connection(state, connection_id, Some(database), || {
+        list_object_statistics_once(state, connection_id, database, schema)
+    })
+    .await
+}
+
 pub async fn list_completion_objects_core(
     state: &AppState,
     connection_id: &str,
@@ -1014,6 +1026,31 @@ pub async fn list_completion_objects_core(
         list_completion_objects_once(state, connection_id, database, schema)
     })
     .await
+}
+
+async fn list_object_statistics_once(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+) -> Result<Vec<db::ObjectStatistics>, String> {
+    let pool_key = state.get_or_create_pool(connection_id, Some(database)).await?;
+    let db_config = connection_config(state, connection_id).await;
+    let connections = state.connections.read().await;
+    try_sqlserver!(connections, &pool_key, list_object_statistics, schema);
+    let pool = connections.get(&pool_key).ok_or("Pool not found")?;
+    match pool {
+        PoolKind::Mysql(p, mode) => {
+            if *mode == MysqlMode::OceanBaseOracle || db_config.as_ref().is_some_and(is_manticoresearch_config) {
+                Ok(vec![])
+            } else {
+                db::mysql::list_object_statistics(p, database).await
+            }
+        }
+        PoolKind::Postgres(p) if db_config.as_ref().is_some_and(is_questdb_config) => Ok(vec![]),
+        PoolKind::Postgres(p) => db::postgres::list_object_statistics(p, schema).await,
+        _ => Ok(vec![]),
+    }
 }
 
 async fn list_objects_once(

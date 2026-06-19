@@ -4,6 +4,7 @@
   LinkedServerInfo,
   TableInfo,
   ObjectInfo,
+  ObjectStatistics,
   ObjectSource,
   ObjectSourceKind,
   ColumnInfo,
@@ -451,6 +452,10 @@ export async function listObjects(connectionId: string, database: string, schema
       object_types: objectTypes?.join(","),
     })}`,
   );
+}
+
+export async function listObjectStatistics(connectionId: string, database: string, schema: string): Promise<ObjectStatistics[]> {
+  return get(`/api/schema/object-statistics?${qs({ connection_id: connectionId, database, schema })}`);
 }
 
 export async function listCompletionObjects(connectionId: string, database: string, schema: string): Promise<ObjectInfo[]> {

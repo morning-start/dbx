@@ -6,6 +6,7 @@ import type {
   LinkedServerInfo,
   TableInfo,
   ObjectInfo,
+  ObjectStatistics,
   ObjectSource,
   ObjectSourceKind,
   ColumnInfo,
@@ -510,6 +511,10 @@ export async function listTables(connectionId: string, database: string, schema:
 
 export async function listObjects(connectionId: string, database: string, schema: string, objectTypes?: SidebarObjectKind[]): Promise<ObjectInfo[]> {
   return invoke("list_objects", { connectionId, database, schema, objectTypes });
+}
+
+export async function listObjectStatistics(connectionId: string, database: string, schema: string): Promise<ObjectStatistics[]> {
+  return invoke("list_object_statistics", { connectionId, database, schema });
 }
 
 export async function listCompletionObjects(connectionId: string, database: string, schema: string): Promise<ObjectInfo[]> {
