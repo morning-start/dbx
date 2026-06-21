@@ -428,6 +428,17 @@ function appendCommandHistory(entry: Omit<RedisCommandHistoryEntry, "id">) {
   scrollCommandTerminalToEnd();
 }
 
+function appendCommandOutput(entry: Omit<RedisCommandHistoryEntry, "id">) {
+  // 显示输出但不记入历史（用于错误提示、空命令提示等）
+  const tempEntry = { id: ++commandHistoryId, ...entry };
+  commandHistory.value = [...commandHistory.value, tempEntry];
+  scrollCommandTerminalToEnd();
+  // 1秒后自动移除提示
+  setTimeout(() => {
+    commandHistory.value = commandHistory.value.filter((e) => e.id !== tempEntry.id);
+  }, 1000);
+}
+
 async function runRedisCommand(command: string) {
   const prompt = commandPrompt.value;
   commandRunning.value = true;
@@ -682,7 +693,8 @@ async function createRedisKey() {
 async function executeCommand() {
   const command = commandText.value.trim();
   if (!command) {
-    appendCommandHistory({
+    // 空命令显示提示但不记入历史
+    appendCommandOutput({
       prompt: commandPrompt.value,
       command: "",
       output: t("redis.commandEmpty"),
