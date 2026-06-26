@@ -1,13 +1,7 @@
 import type { WebDavConfig } from "@/lib/api";
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/safeStorage";
 
-export const WEB_DAV_AUTO_UPLOAD_STORAGE_KEYS = [
-  "dbx-webdav-endpoint",
-  "dbx-webdav-username",
-  "dbx-webdav-remote-path",
-  "dbx-webdav-auto-upload-enabled",
-  "dbx-webdav-auto-upload-interval-minutes",
-] as const;
+export const WEB_DAV_AUTO_UPLOAD_STORAGE_KEYS = ["dbx-webdav-endpoint", "dbx-webdav-username", "dbx-webdav-remote-path", "dbx-webdav-auto-upload-enabled", "dbx-webdav-auto-upload-interval-minutes"] as const;
 
 export const DEFAULT_WEB_DAV_REMOTE_PATH = "DBX/sync/snapshot.json";
 export const DEFAULT_WEB_DAV_AUTO_UPLOAD_INTERVAL_MINUTES = 30;

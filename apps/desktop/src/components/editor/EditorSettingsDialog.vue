@@ -77,12 +77,7 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
 import { currentLocale, setLocale, type Locale } from "@/i18n";
 import { LOCALE_OPTIONS } from "@/lib/localeOptions";
-import {
-  DEFAULT_WEB_DAV_AUTO_UPLOAD_INTERVAL_MINUTES,
-  DEFAULT_WEB_DAV_REMOTE_PATH,
-  normalizedWebDavAutoUploadInterval,
-  writeWebDavAutoUploadFields,
-} from "@/lib/webdavAutoUploadConfig";
+import { DEFAULT_WEB_DAV_AUTO_UPLOAD_INTERVAL_MINUTES, DEFAULT_WEB_DAV_REMOTE_PATH, normalizedWebDavAutoUploadInterval, writeWebDavAutoUploadFields } from "@/lib/webdavAutoUploadConfig";
 
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
