@@ -1,6 +1,4 @@
 <script lang="ts">
-import { ref, shallowRef } from "vue";
-const globalDdlOpen = ref(false);
 type CachedStructuredFilterRule = {
   id: string;
   columnName: string;
@@ -19,7 +17,7 @@ const structuredFilterStateCache = new Map<string, StructuredFilterCacheState>()
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, useSlots, watch, defineAsyncComponent, type Component, type CSSProperties } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, ref, shallowRef, useSlots, watch, defineAsyncComponent, type Component, type CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   ArrowUp,
@@ -7293,7 +7291,9 @@ function clampCellDetailPanelSize(value: number, layout = cellDetailPanelLayout.
   const max = layout === "bottom" ? CELL_DETAIL_PANEL_MAX_HEIGHT : DRAWER_MAX_WIDTH;
   return Math.min(Math.max(value, min), max);
 }
-const showTableInfo = globalDdlOpen;
+// Table info drawers are tied to a single grid instance. Keeping this state
+// module-global leaks the drawer into other kept-alive tabs.
+const showTableInfo = ref(false);
 const activeTableInfoTab = ref<TableInfoTab>("columns");
 const ddlContent = ref("");
 const ddlLoading = ref(false);
