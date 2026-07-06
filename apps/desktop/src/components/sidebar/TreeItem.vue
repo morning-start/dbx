@@ -3762,12 +3762,12 @@ function openAllDatabasesExport() {
 
 function openTableImport() {
   const node = props.node;
-  if (node.type !== "table" || !node.connectionId || !node.database) return;
+  if (!node.connectionId || !node.database) return;
   connectionStore.tableImportSource = {
     connectionId: node.connectionId,
     database: node.database,
     schema: node.schema,
-    tableName: node.label,
+    tableName: node.type === "table" ? node.label : undefined,
   };
 }
 
@@ -3829,7 +3829,9 @@ const canOpenObjectBrowser = computed(() => {
   return supportsObjectBrowserTreeNode(rawDatabaseType(), props.node.type);
 });
 const canOpenTableImport = computed(() => {
-  return props.node.type === "table" && !isSqlServerLinkedNode(props.node) && !!props.node.database && supportsTableImport(currentDatabaseType());
+  const node = props.node;
+  const supportedNode = node.type === "table" || ((node.type === "database" || node.type === "schema" || node.type === "group-tables") && canCreateTable.value);
+  return supportedNode && !isSqlServerLinkedNode(node) && !!node.connectionId && !!node.database && supportsTableImport(currentDatabaseType());
 });
 const canOpenStructureEditor = computed(() => {
   const editableNode = props.node.type === "table" || ((props.node.type === "column" || props.node.type === "index") && !!props.node.tableName);
@@ -4502,6 +4504,9 @@ function treeItemMenuItems(): ContextMenuItem[] {
     if (canCreateTable.value) {
       items.push({ label: t("contextMenu.createTable"), action: createTable, icon: Plus });
     }
+    if (canOpenTableImport.value) {
+      items.push({ label: t("contextMenu.importData"), action: openTableImport, icon: Upload });
+    }
     if (canCreateSchema.value) {
       items.push({ label: t("contextMenu.createSchema"), action: openCreateSchemaDialog, icon: Plus });
     }
@@ -4874,6 +4879,9 @@ function treeItemMenuItems(): ContextMenuItem[] {
     const canLoadAllObjectGroup = node.type === "group-tables" || node.type === "group-views" || node.type === "group-materialized-views";
     if (node.type === "group-tables" && canCreateTable.value) {
       items.push({ label: t("contextMenu.createTable"), action: createTable, icon: Plus });
+      if (canOpenTableImport.value) {
+        items.push({ label: t("contextMenu.importData"), action: openTableImport, icon: Upload });
+      }
       if (canPasteTreeClipboardToCurrentNode()) {
         items.push({ label: t("contextMenu.pasteTable"), action: openPasteTableDialog, icon: Clipboard });
       }

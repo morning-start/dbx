@@ -262,7 +262,7 @@ export const useConnectionStore = defineStore("connection", () => {
     connectionId: string;
     database: string;
     schema?: string;
-    tableName: string;
+    tableName?: string;
   } | null>(null);
   const tableDataGenerateSource = ref<{
     connectionId: string;

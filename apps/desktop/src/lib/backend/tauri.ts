@@ -1964,6 +1964,7 @@ export interface TableImportRequest {
   parseOptions?: TableImportParseOptions | null;
   mappings: TableImportColumnMapping[];
   mode: TableImportMode;
+  createTable?: boolean;
   batchSize: number;
 }
 

@@ -27,8 +27,12 @@ const props = defineProps<{
   prefillTable?: string;
 }>();
 
+type ImportTargetMode = "existing" | "create";
+
 const SKIP_VALUE = "__skip__";
 const targetColumns = ref<ColumnInfo[]>([]);
+const targetMode = ref<ImportTargetMode>(props.prefillTable ? "existing" : "create");
+const newTableName = ref("");
 const selectedSource = ref<string | File | null>(null);
 const sourceFormat = ref<api.TableImportSourceFormat>("csv");
 const preview = ref<api.TableImportPreview | null>(null);
@@ -70,6 +74,8 @@ const wizardSteps: Array<{ value: TableImportWizardStep; labelKey: string }> = [
 ];
 
 const selectedConnection = computed(() => (props.prefillConnectionId ? store.getConfig(props.prefillConnectionId) : undefined));
+const hasExistingTarget = computed(() => !!props.prefillTable);
+const targetTableName = computed(() => (targetMode.value === "create" ? newTableName.value.trim() : props.prefillTable || ""));
 const targetColumnNames = computed(() => targetColumns.value.map((column) => column.name));
 const mappedColumns = computed<api.TableImportColumnMapping[]>(() => {
   const currentPreview = preview.value;
@@ -89,11 +95,11 @@ const requiredUnmappedColumns = computed(() =>
     mappedColumns.value.map((mapping) => mapping.targetColumn),
   ),
 );
-const canImport = computed(() => !!preview.value && !!props.prefillConnectionId && !!props.prefillTable && mappingValidation.value.valid && !running.value);
+const canImport = computed(() => !!preview.value && !!props.prefillConnectionId && !!targetTableName.value && mappingValidation.value.valid && !running.value);
 const canGoBack = computed(() => wizardStep.value !== "source" && wizardStep.value !== "execution" && !running.value);
 const canGoNext = computed(() => {
   if (wizardStep.value === "source") return !!selectedSource.value && !!sourceFormat.value;
-  if (wizardStep.value === "options") return !!preview.value;
+  if (wizardStep.value === "options") return !!preview.value && !!targetTableName.value;
   if (wizardStep.value === "mapping") return mappingValidation.value.valid;
   return false;
 });
@@ -104,7 +110,7 @@ const progressPercent = computed(() => {
 });
 const currentStepIndex = computed(() => wizardSteps.findIndex((step) => step.value === wizardStep.value));
 const targetLabel = computed(() => {
-  const pieces = [selectedConnection.value?.name, props.prefillDatabase, props.prefillSchema, props.prefillTable].filter(Boolean);
+  const pieces = [selectedConnection.value?.name, props.prefillDatabase, props.prefillSchema, targetTableName.value].filter(Boolean);
   return pieces.join(" / ");
 });
 const selectedSourceName = computed(() => {
@@ -124,6 +130,8 @@ const terminalStatus = computed(() => progress.value?.status && ["done", "error"
 
 function resetState() {
   targetColumns.value = [];
+  targetMode.value = props.prefillTable ? "existing" : "create";
+  newTableName.value = "";
   selectedSource.value = null;
   sourceFormat.value = "csv";
   delimiter.value = ",";
@@ -154,14 +162,24 @@ function detectFormat(name: string): api.TableImportSourceFormat {
   return "csv";
 }
 
+function suggestedTableName(name: string) {
+  const baseName = name.split(/[\\/]/).pop() || name;
+  const withoutExtension = baseName.replace(/\.[^.]+$/, "").trim();
+  return withoutExtension.replace(/[\s-]+/g, "_") || "imported_data";
+}
+
 function applyAutoMapping() {
   const currentPreview = preview.value;
   if (!currentPreview) return;
+  if (targetMode.value === "create") {
+    columnMapping.value = Object.fromEntries(currentPreview.columns.map((source) => [source, source]));
+    return;
+  }
   columnMapping.value = autoMapImportColumns(currentPreview.columns, targetColumnNames.value);
 }
 
 async function loadTargetColumns() {
-  if (!props.prefillConnectionId || !props.prefillDatabase || !props.prefillTable) return;
+  if (targetMode.value !== "existing" || !props.prefillConnectionId || !props.prefillDatabase || !props.prefillTable) return;
   loadingTarget.value = true;
   errorMessage.value = "";
   try {
@@ -211,6 +229,9 @@ function assignSelectedSource(source: string | File) {
   errorMessage.value = "";
   const name = typeof source === "string" ? source : source.name;
   sourceFormat.value = detectFormat(name);
+  if (!newTableName.value.trim()) {
+    newTableName.value = suggestedTableName(name);
+  }
   delimiter.value = sourceFormat.value === "tsv" ? "\\t" : ",";
   selectedSheet.value = "";
   wizardStep.value = "options";
@@ -308,7 +329,8 @@ async function goNext() {
 
 async function startImport() {
   const currentPreview = preview.value;
-  if (!canImport.value || !currentPreview || !props.prefillConnectionId || !props.prefillTable) return;
+  const tableName = targetTableName.value;
+  if (!canImport.value || !currentPreview || !props.prefillConnectionId || !tableName) return;
   running.value = true;
   cancelling.value = false;
   errorMessage.value = "";
@@ -328,13 +350,14 @@ async function startImport() {
         connectionId: props.prefillConnectionId,
         database: props.prefillDatabase || "",
         schema: props.prefillSchema || "",
-        table: props.prefillTable,
+        table: tableName,
         filePath: currentPreview.filePath,
         sourceRef: currentPreview.sourceRef || null,
         sourceFormat: sourceFormat.value,
         parseOptions: parseOptions.value,
         mappings: mappedColumns.value,
-        mode: importMode.value,
+        mode: targetMode.value === "create" ? "append" : importMode.value,
+        createTable: targetMode.value === "create",
         batchSize: Math.max(1, Number(batchSize.value) || 500),
       },
       (nextProgress) => {
@@ -343,7 +366,12 @@ async function startImport() {
     );
     progress.value = { importId: summary.importId, status: "done", rowsImported: summary.rowsImported, totalRows: summary.totalRows };
     toast(t("tableImport.success", { count: summary.rowsImported }), 2500);
-    store.invalidateMetadataCache(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined, props.prefillTable);
+    store.invalidateMetadataCache(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined, tableName);
+    if (targetMode.value === "create") {
+      store.refreshObjectListTreeNode(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined).catch((error) => {
+        console.warn("[DBX][table-import:refresh-created-table-failed]", error);
+      });
+    }
   } catch (e: any) {
     const message = String(e?.message || e);
     errorMessage.value = message;
@@ -386,6 +414,15 @@ watch(
 );
 
 watch([sourceFormat, delimiter, hasHeader, trimValues, emptyStringAsNull, selectedSheet, jsonShape, previewLimit], schedulePreviewReload);
+watch(targetMode, (mode) => {
+  if (mode === "existing") {
+    void loadTargetColumns();
+  } else {
+    targetColumns.value = [];
+    importMode.value = "append";
+    applyAutoMapping();
+  }
+});
 </script>
 
 <template>
@@ -482,6 +519,29 @@ watch([sourceFormat, delimiter, hasHeader, trimValues, emptyStringAsNull, select
             </div>
           </div>
 
+          <div class="grid grid-cols-[minmax(0,1fr)_minmax(220px,320px)] gap-3 rounded-md border p-3">
+            <div class="space-y-1.5">
+              <Label class="text-xs">{{ t("tableImport.targetMode") }}</Label>
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" class="rounded-md border px-3 py-2 text-left text-xs" :class="targetMode === 'existing' ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'" :disabled="!hasExistingTarget" @click="targetMode = 'existing'">
+                  <div class="font-medium">{{ t("tableImport.existingTable") }}</div>
+                  <div class="mt-1 truncate text-[11px] text-muted-foreground">{{ props.prefillTable || t("tableImport.noExistingTarget") }}</div>
+                </button>
+                <button type="button" class="rounded-md border px-3 py-2 text-left text-xs" :class="targetMode === 'create' ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'" @click="targetMode = 'create'">
+                  <div class="font-medium">{{ t("tableImport.createTable") }}</div>
+                  <div class="mt-1 text-[11px] text-muted-foreground">{{ t("tableImport.createTableHint") }}</div>
+                </button>
+              </div>
+            </div>
+            <div class="space-y-1.5">
+              <Label class="text-xs">{{ t("tableImport.targetTableName") }}</Label>
+              <Input v-if="targetMode === 'create'" v-model="newTableName" class="h-8 text-xs font-mono" />
+              <div v-else class="flex h-8 items-center rounded-md border px-2 text-xs">
+                <span class="truncate">{{ props.prefillTable }}</span>
+              </div>
+            </div>
+          </div>
+
           <div v-if="sourceFormat === 'csv' || sourceFormat === 'tsv' || sourceFormat === 'delimited'" class="grid grid-cols-4 gap-3 rounded-md border p-3">
             <div class="space-y-1.5">
               <Label class="text-xs">{{ t("tableImport.delimiter") }}</Label>
@@ -569,7 +629,8 @@ watch([sourceFormat, delimiter, hasHeader, trimValues, emptyStringAsNull, select
                   <div class="truncate font-mono text-xs" :title="sourceColumn">
                     {{ sourceColumn }}
                   </div>
-                  <Select :model-value="columnMapping[sourceColumn] || SKIP_VALUE" @update:model-value="(value: any) => updateMapping(sourceColumn, value)">
+                  <Input v-if="targetMode === 'create'" :model-value="columnMapping[sourceColumn] ?? sourceColumn" class="h-7 text-xs font-mono" @update:model-value="(value: any) => updateMapping(sourceColumn, value)" />
+                  <Select v-else :model-value="columnMapping[sourceColumn] || SKIP_VALUE" @update:model-value="(value: any) => updateMapping(sourceColumn, value)">
                     <SelectTrigger class="h-7 text-xs">
                       <SelectValue />
                     </SelectTrigger>
@@ -636,7 +697,7 @@ watch([sourceFormat, delimiter, hasHeader, trimValues, emptyStringAsNull, select
             </div>
           </div>
           <div class="grid grid-cols-3 gap-3">
-            <div class="space-y-1.5">
+            <div v-if="targetMode === 'existing'" class="space-y-1.5">
               <Label class="text-xs">{{ t("tableImport.mode") }}</Label>
               <Select :model-value="importMode" @update:model-value="(value: any) => (importMode = value)">
                 <SelectTrigger class="h-8 text-xs">
