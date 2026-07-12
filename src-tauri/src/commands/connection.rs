@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
 pub use dbx_core::agent_connection::{
     agent_connect_params, mongo_legacy_error_with_auth_hint, mongo_uses_legacy_driver, oracle_alternate_connect_config,
