@@ -7,7 +7,7 @@ test("hides the agent driver install hint when the selected driver is installed"
 });
 
 test("shows the agent driver install hint when the selected driver is missing", () => {
-  assert.equal(showAgentDriverInstallHint("informix", [{ db_type: "informix", installed: false }]), true);
+  assert.equal(showAgentDriverInstallHint("dameng", [{ db_type: "dameng", installed: false }]), true);
 });
 
 test("shows the agent driver install hint for TDengine when missing", () => {
