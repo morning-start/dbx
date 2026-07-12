@@ -2,9 +2,9 @@ use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::agent_service::AgentProgressEvent;
 use crate::agent_catalog;
 use crate::agent_manager::{AgentManager, AgentState, DEFAULT_JRE_KEY};
+use crate::agent_service::AgentProgressEvent;
 use crate::database_capabilities;
 use crate::db::agent_driver::{AgentDriverClient, AgentLaunchSpec, AgentMethod};
 use crate::jdbc;
@@ -136,9 +136,9 @@ pub async fn call_daemon_method_with_timeout<T: DeserializeOwned + Send + 'stati
     timeout_duration: Option<Duration>,
     progress: impl Fn(AgentProgressEvent),
 ) -> Result<T, String> {
-    call_daemon_with_timeout(manager, db_type, driver_profile, method.as_str(), params, timeout_duration, progress).await
+    call_daemon_with_timeout(manager, db_type, driver_profile, method.as_str(), params, timeout_duration, progress)
+        .await
 }
-
 
 fn runtime_agent_key_candidates(db_type: &DatabaseType, driver_profile: Option<&str>) -> Option<Vec<&'static str>> {
     let primary = db_type_to_agent_key(db_type, driver_profile)?;
@@ -258,8 +258,7 @@ async fn ensure_jdbc_bridge_driver_installed(
         if target.exists() {
             continue;
         }
-        std::fs::copy(&source, &target)
-            .map_err(|err| err.to_string())?;
+        std::fs::copy(&source, &target).map_err(|err| err.to_string())?;
     }
 
     // Validate that at least one JAR was copied.

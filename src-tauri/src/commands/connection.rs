@@ -578,7 +578,11 @@ async fn connect_sqlite_from_config(config: &ConnectionConfig) -> Result<db::sql
 }
 
 #[tauri::command]
-pub async fn test_connection(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, config: ConnectionConfig) -> Result<String, String> {
+pub async fn test_connection(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+    config: ConnectionConfig,
+) -> Result<String, String> {
     let tunnel_id = format!("{}:test", config.id);
     let has_transport_layers = config.has_effective_transport_layers();
     let connection_id = if has_transport_layers { tunnel_id.as_str() } else { config.id.as_str() };
