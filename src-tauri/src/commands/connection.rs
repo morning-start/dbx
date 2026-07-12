@@ -58,6 +58,7 @@ async fn test_agent_connection(
     config: &ConnectionConfig,
     host: &str,
     port: u16,
+    progress: impl Fn(dbx_core::agent_service::AgentProgressEvent),
 ) -> Result<String, String> {
     let connect_params = agent_connect_params(config, host, port, config.database.as_deref().unwrap_or(""));
     let result = state
@@ -68,6 +69,7 @@ async fn test_agent_connection(
             AgentMethod::TestConnection,
             connect_params,
             Some(agent_connect_timeout(config)),
+            progress,
         )
         .await;
 
@@ -86,6 +88,7 @@ async fn test_agent_connection(
                         alternate_config.database.as_deref().unwrap_or(""),
                     ),
                     Some(agent_connect_timeout(&alternate_config)),
+                    |_| {},
                 )
                 .await
                 .map_err(|alternate_err| {
@@ -575,7 +578,7 @@ async fn connect_sqlite_from_config(config: &ConnectionConfig) -> Result<db::sql
 }
 
 #[tauri::command]
-pub async fn test_connection(state: State<'_, Arc<AppState>>, config: ConnectionConfig) -> Result<String, String> {
+pub async fn test_connection(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, config: ConnectionConfig) -> Result<String, String> {
     let tunnel_id = format!("{}:test", config.id);
     let has_transport_layers = config.has_effective_transport_layers();
     let connection_id = if has_transport_layers { tunnel_id.as_str() } else { config.id.as_str() };
@@ -585,7 +588,10 @@ pub async fn test_connection(state: State<'_, Arc<AppState>>, config: Connection
     let target = redacted_connection_url_for_endpoint(&config, &host, port);
     let connect_timeout = std::time::Duration::from_secs(config.effective_connect_timeout_secs());
     let idle_timeout = std::time::Duration::from_secs(config.idle_timeout_secs);
-    log::info!("[test_connection] db_type={:?} target={}", config.db_type, target);
+    let progress = |event: dbx_core::agent_service::AgentProgressEvent| {
+        let _ = app.emit("agent-install-progress", event);
+    };
+
     let result = match probe_result {
         Err(e) => Err(e),
         Ok(()) => match config.db_type {
@@ -858,7 +864,7 @@ pub async fn test_connection(state: State<'_, Arc<AppState>>, config: Connection
                     .to_string())
             }
             db_type if database_capabilities::is_agent_type(&db_type) => {
-                test_agent_connection(state.inner(), &config, &host, port).await
+                test_agent_connection(state.inner(), &config, &host, port, &progress).await
             }
             DatabaseType::PrestoSql => {
                 let jdbc_config = prestosql_jdbc_config_for_endpoint(&config, &host, port);

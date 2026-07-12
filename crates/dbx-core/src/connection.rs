@@ -1265,6 +1265,7 @@ impl AppState {
                         &db_config.db_type,
                         db_config.driver_profile.as_deref(),
                         &db_config.agent_java_options,
+                        |_| {},
                     )
                     .await?;
                 let connect_result = client

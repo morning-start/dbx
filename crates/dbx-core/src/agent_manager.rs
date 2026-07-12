@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use crate::agent_service::AgentProgressEvent;
 use crate::db::agent_driver::{AgentDriverClient, AgentLaunchSpec, AgentMethod};
 use crate::models::connection::DatabaseType;
 
@@ -490,6 +491,12 @@ impl AgentManager {
         &self.base_dir
     }
 
+    /// Derive the plugins root directory from the agent base directory.
+    /// agents dir:  ~/.dbx/agents  →  plugins dir:  ~/.dbx/plugins
+    pub fn plugins_root(&self) -> PathBuf {
+        self.base_dir.parent().unwrap_or(&self.base_dir).join("plugins")
+    }
+
     pub fn agent_app_version(&self) -> &str {
         &self.app_version
     }
@@ -771,21 +778,18 @@ impl AgentManager {
         crate::agent_runtime::is_agent_type(db_type)
     }
 
-    pub async fn spawn(
-        &self,
-        db_type: &DatabaseType,
-        driver_profile: Option<&str>,
-    ) -> Result<AgentDriverClient, String> {
-        self.spawn_with_extra_java_args(db_type, driver_profile, &[]).await
-    }
-
     pub async fn spawn_with_extra_java_args(
         &self,
         db_type: &DatabaseType,
         driver_profile: Option<&str>,
         extra_java_args: &[String],
+        progress: impl Fn(AgentProgressEvent),
     ) -> Result<AgentDriverClient, String> {
-        crate::agent_runtime::spawn_connection_client(self, db_type, driver_profile, extra_java_args).await
+        crate::agent_runtime::spawn_connection_client(self, db_type, driver_profile, extra_java_args, progress).await
+    }
+
+    pub async fn spawn(&self, db_type: &DatabaseType, driver_profile: Option<&str>) -> Result<AgentDriverClient, String> {
+        self.spawn_with_extra_java_args(db_type, driver_profile, &[], |_| {}).await
     }
 
     pub async fn call_daemon<T: serde::de::DeserializeOwned + Send + 'static>(
@@ -794,8 +798,9 @@ impl AgentManager {
         driver_profile: Option<&str>,
         method: &str,
         params: serde_json::Value,
+        progress: impl Fn(AgentProgressEvent),
     ) -> Result<T, String> {
-        crate::agent_runtime::call_daemon(self, db_type, driver_profile, method, params).await
+        crate::agent_runtime::call_daemon(self, db_type, driver_profile, method, params, progress).await
     }
 
     pub async fn call_daemon_with_timeout<T: serde::de::DeserializeOwned + Send + 'static>(
@@ -805,8 +810,9 @@ impl AgentManager {
         method: &str,
         params: serde_json::Value,
         timeout_duration: Option<std::time::Duration>,
+        progress: impl Fn(AgentProgressEvent),
     ) -> Result<T, String> {
-        crate::agent_runtime::call_daemon_with_timeout(self, db_type, driver_profile, method, params, timeout_duration)
+        crate::agent_runtime::call_daemon_with_timeout(self, db_type, driver_profile, method, params, timeout_duration, progress)
             .await
     }
 
@@ -816,8 +822,9 @@ impl AgentManager {
         driver_profile: Option<&str>,
         method: AgentMethod,
         params: serde_json::Value,
+        progress: impl Fn(AgentProgressEvent),
     ) -> Result<T, String> {
-        crate::agent_runtime::call_daemon_method(self, db_type, driver_profile, method, params).await
+        crate::agent_runtime::call_daemon_method(self, db_type, driver_profile, method, params, progress).await
     }
 
     pub async fn call_daemon_method_with_timeout<T: serde::de::DeserializeOwned + Send + 'static>(
@@ -827,6 +834,7 @@ impl AgentManager {
         method: AgentMethod,
         params: serde_json::Value,
         timeout_duration: Option<std::time::Duration>,
+        progress: impl Fn(AgentProgressEvent),
     ) -> Result<T, String> {
         crate::agent_runtime::call_daemon_method_with_timeout(
             self,
@@ -835,6 +843,7 @@ impl AgentManager {
             method,
             params,
             timeout_duration,
+            progress,
         )
         .await
     }

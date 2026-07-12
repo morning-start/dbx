@@ -16,13 +16,14 @@ export function agentDriverInstallKey(dbType: DatabaseType | undefined, driverPr
 }
 
 export function showAgentDriverInstallHint(dbType: DatabaseType | undefined, drivers: readonly AgentDriverInstallState[], driverProfile?: string): boolean {
+  if (isJdbcBridgeType(dbType)) return false;
   if (!supportsDriverManagement(dbType)) return false;
   const driverKey = agentDriverInstallKey(dbType, driverProfile);
   if (!driverKey) return false;
   return drivers.find((driver) => driver.db_type === driverKey)?.installed !== true;
 }
-
 export function hasAgentDriverUpdate(dbType: DatabaseType | undefined, drivers: readonly AgentDriverInstallState[], driverProfile?: string): boolean {
+  if (isJdbcBridgeType(dbType)) return false;
   if (!supportsDriverManagement(dbType)) return false;
   const driverKey = agentDriverInstallKey(dbType, driverProfile);
   return drivers.find((driver) => driver.db_type === driverKey)?.update_available === true;
@@ -32,4 +33,32 @@ export function appendAgentDriverUpdateHint(message: string, hint: string): stri
   if (!message.trim()) return hint;
   if (message.includes(hint)) return message;
   return `${message}\n\n${hint}`;
+}
+
+/// JDBC bridge types: their drivers are auto-downloaded from Maven Central by the
+/// backend (JdbcBridge), so the old-style `installAgent` flow must not be triggered.
+const JDBC_BRIDGE_DB_TYPES: Record<string, true> = {
+  h2: true,
+  hive: true,
+  spark: true,
+  trino: true,
+  db2: true,
+  informix: true,
+  snowflake: true,
+  clickhouse: true,
+  redshift: true,
+  bigquery: true,
+  vertica: true,
+  exasol: true,
+  saphana: true,
+  teradata: true,
+  firebird: true,
+  neo4j: true,
+  cassandra: true,
+  kylin: true,
+  databricks: true,
+};
+
+export function isJdbcBridgeType(dbType: DatabaseType | undefined): boolean {
+  return dbType !== undefined && JDBC_BRIDGE_DB_TYPES[dbType] === true;
 }

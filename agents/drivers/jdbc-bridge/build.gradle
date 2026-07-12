@@ -1,0 +1,9 @@
+dependencies {
+    implementation project(':common')
+}
+
+tasks.named('shadowJar') {
+    manifest {
+        attributes('Agent-Label': 'JDBC Bridge', 'Main-Class': 'com.dbx.agent.jdbcbridge.JdbcBridge')
+    }
+}

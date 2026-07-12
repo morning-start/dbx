@@ -349,7 +349,7 @@ fn jdbc_local_drivers_dir(plugins_root: &Path) -> PathBuf {
     jdbc_drivers_dir(plugins_root).join("local")
 }
 
-fn jdbc_maven_resolver_executable(plugin_dir: &Path) -> PathBuf {
+pub fn jdbc_maven_resolver_executable(plugin_dir: &Path) -> PathBuf {
     #[cfg(windows)]
     {
         plugin_dir.join("bin").join("dbx-maven-resolver.bat")
@@ -857,22 +857,23 @@ fn file_sha256(path: &Path) -> Result<String, String> {
 }
 
 #[derive(Debug, Deserialize)]
-struct MavenResolveOutput {
-    coordinate: String,
-    scope: String,
-    repositories: Vec<String>,
-    artifacts: Vec<MavenResolvedArtifact>,
+#[serde(rename_all = "camelCase")]
+pub struct MavenResolveOutput {
+    pub coordinate: String,
+    pub scope: String,
+    pub repositories: Vec<String>,
+    pub artifacts: Vec<MavenResolvedArtifact>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MavenResolvedArtifact {
-    group_id: String,
-    artifact_id: String,
-    version: String,
-    classifier: String,
-    extension: String,
-    file: String,
+pub struct MavenResolvedArtifact {
+    pub group_id: String,
+    pub artifact_id: String,
+    pub version: String,
+    pub classifier: String,
+    pub extension: String,
+    pub file: String,
 }
 
 pub fn unique_target_path(dir: &Path, file_name: &str) -> PathBuf {

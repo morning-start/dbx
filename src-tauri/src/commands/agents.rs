@@ -18,7 +18,6 @@ pub struct AgentUpdateBlocker {
     pub db_type: String,
     pub label: String,
 }
-
 #[tauri::command]
 pub async fn list_installed_agents_local(state: State<'_, Arc<AppState>>) -> Result<Vec<AgentDriverInfo>, String> {
     Ok(build_agent_list(&state.agent_manager, None))

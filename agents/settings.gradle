@@ -10,7 +10,9 @@ def driverModules = [
 ]
 
 include(*(infrastructureModules + driverModules))
+include('jdbc-bridge')
 
 driverModules.each { name ->
     project(":${name}").projectDir = file("drivers/${name}")
 }
+project(':jdbc-bridge').projectDir = file('drivers/jdbc-bridge')
