@@ -567,7 +567,10 @@ jobs:
         env:
           TAG_NAME: ${{ matrix.tag }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_USERNAME: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CNB_REPOSITORY: dbxio.com/dbx
+          CNB_USERNAME: cnb
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
         run: |
           set -euo pipefail
