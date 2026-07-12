@@ -3976,7 +3976,6 @@ mod tests {
     fn native_direct_connections_skip_tcp_probe() {
         for db_type in [
             DatabaseType::Postgres,
-            DatabaseType::Redshift,
             DatabaseType::Redis,
             DatabaseType::ClickHouse,
             DatabaseType::SqlServer,

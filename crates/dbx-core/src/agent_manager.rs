@@ -209,14 +209,14 @@ mod tests {
             Err(err) => err,
         };
 
-        assert_eq!(err, "h2 driver is not installed. Please install it from the Driver Manager.");
+        assert_eq!(err, "JDBC Maven resolver is not installed. Please install the JDBC plugin first.");
     }
 
     #[tokio::test]
     async fn runtime_gateway_returns_existing_missing_java_error() {
         let manager = test_manager("missing-java");
-        let jar = manager.driver_jar_path("h2");
-        touch(&jar);
+        let lib_dir = manager.driver_dir("h2").join("lib");
+        touch(&lib_dir.join("h2.jar"));
 
         let err = match manager.spawn(&DatabaseType::H2, None).await {
             Ok(_) => panic!("missing Java runtime should fail"),
