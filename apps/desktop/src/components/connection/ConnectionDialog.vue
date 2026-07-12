@@ -647,6 +647,7 @@ const driverProfiles: Record<
   },
   dm: { type: "dameng", port: 5236, user: "SYSDBA", label: "DM (Dameng)", icon: "dm" },
   h2: { type: "h2", port: 9092, user: "sa", label: "H2", icon: "h2" },
+  "h2-legacy": { type: "h2", port: 9092, user: "sa", label: "H2 2.1 Legacy", icon: "h2" },
   snowflake: { type: "snowflake", port: 443, user: "", label: "Snowflake", icon: "snowflake" },
   trino: { type: "trino", port: 8080, user: "", label: "Trino", icon: "trino" },
   prestosql: { type: "prestosql", port: 8080, user: "", label: "PrestoSQL", icon: "presto" },
@@ -3982,6 +3983,30 @@ function openExternalUrl(url: string) {
                     <Button size="sm" :variant="h2ConnectionMode === 'tcp' ? 'default' : 'outline'" @click="switchH2ConnectionMode('tcp')">
                       {{ t("connection.h2TcpMode") }}
                     </Button>
+                  </div>
+                </div>
+
+                <div v-if="form.db_type === 'h2'" class="grid grid-cols-4 items-center gap-4">
+                  <Label :class="connectionLabelSmallClass">Driver</Label>
+                  <div class="col-span-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      :variant="form.driver_profile !== 'h2-legacy' ? 'default' : 'outline'"
+                      @click="
+                        form.driver_profile = 'h2';
+                        resetTestState();
+                      "
+                      >H2 2.3</Button
+                    >
+                    <Button
+                      size="sm"
+                      :variant="form.driver_profile === 'h2-legacy' ? 'default' : 'outline'"
+                      @click="
+                        form.driver_profile = 'h2-legacy';
+                        resetTestState();
+                      "
+                      >H2 2.1 Legacy</Button
+                    >
                   </div>
                 </div>
 
